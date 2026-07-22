@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       FROM plan_cuentas pc
       JOIN asientos_detalle ad ON ad.id_cuenta = pc.id_cuenta
       JOIN asientos a ON a.id_asiento = ad.id_asiento
-      WHERE pc.es_imputable = true AND a.fecha <= ${asOf}
+      WHERE a.fecha <= ${asOf}
       GROUP BY pc.id_cuenta, pc.codigo, pc.nombre, pc.tipo
       ORDER BY pc.codigo
     `
