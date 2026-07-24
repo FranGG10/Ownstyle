@@ -2,6 +2,7 @@
 
 import { sql } from "@/lib/db"
 import { revalidatePath } from "next/cache"
+import { notificarConsumoStockSindic } from "@/lib/sindic-stock"
 
 interface LineaVenta {
   id_producto: number
@@ -170,54 +171,6 @@ async function createAsientoVenta(idMovimiento: number, data: VentaData, numeroC
       INSERT INTO asientos_detalle (id_asiento, id_cuenta, debe, haber)
       VALUES (${idAsiento}, ${cuentaMercaderias}, 0, ${data.total_costo})
     `
-  }
-}
-
-// Avisa a Sindic (sistema aparte que lleva el stock físico real de la ropa) que se vendió
-// una prenda acá, para que descuente su stock. No genera ningún asiento en Sindic — solo
-// mueve stock allá. Si Sindic no responde o falla, no debe frenar la venta en Ownstyle:
-// se loguea el error y listo (la venta ya quedó registrada acá de todos modos).
-async function notificarConsumoStockSindic(item: {
-  modelo: string | null
-  color: string | null
-  talla: string | null
-  quantity: number
-  reference: string
-}) {
-  const baseUrl = process.env.SINDIC_API_URL
-  const apiKey = process.env.SINDIC_API_KEY
-
-  if (!baseUrl || !apiKey) {
-    console.error("[v0] SINDIC_API_URL o SINDIC_API_KEY no configurados; no se pudo avisar el consumo de stock")
-    return
-  }
-
-  try {
-    const response = await fetch(`${baseUrl}/api/stock/consumo-externo`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        source: "ownstyle",
-        reference: item.reference,
-        items: [
-          {
-            modelo: item.modelo,
-            color: item.color,
-            talla: item.talla,
-            quantity: item.quantity,
-          },
-        ],
-      }),
-    })
-
-    if (!response.ok) {
-      console.error("[v0] Sindic respondió con error al descontar stock:", response.status, await response.text())
-    }
-  } catch (error) {
-    console.error("[v0] No se pudo contactar a Sindic para descontar stock:", error)
   }
 }
 

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { revalidatePath } from "next/cache"
+import { notificarConsumoStockSindic } from "@/lib/sindic-stock"
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,16 +66,33 @@ export async function POST(request: NextRequest) {
 
       // Obtener stock actual
       const [productoDb] = await sql`
-        SELECT stock_actual, costo FROM productos WHERE id_producto = ${producto.id_producto}
+        SELECT stock_actual, costo, categoria, modelo, color, talle FROM productos WHERE id_producto = ${producto.id_producto}
       `
-      const stockAnterior = productoDb?.stock_actual || 0
-      const stockNuevo = stockAnterior - 1
       const costo = Number(productoDb?.costo) || 0
       totalCosto += costo
 
+      // Los productos de categoria "Ropa" tienen stock ilimitado acá: no se descuenta stock
+      // local ni se registra movimiento de stock, pero sí se genera el asiento de venta y CMV
+      // (igual que en app/actions/ventas.ts). El stock físico de esta ropa vive en Sindic, así
+      // que se le avisa por API para que descuente ahí; si Sindic no responde no debe frenar
+      // la carga masiva.
+      if (productoDb?.categoria === "Ropa") {
+        await notificarConsumoStockSindic({
+          modelo: productoDb.modelo,
+          color: productoDb.color,
+          talla: productoDb.talle,
+          quantity: 1,
+          reference: numeroComprobante,
+        })
+        continue
+      }
+
+      const stockAnterior = productoDb?.stock_actual || 0
+      const stockNuevo = stockAnterior - 1
+
       // Actualizar stock
       await sql`
-        UPDATE productos 
+        UPDATE productos
         SET stock_actual = ${stockNuevo}, updated_at = CURRENT_TIMESTAMP
         WHERE id_producto = ${producto.id_producto}
       `
