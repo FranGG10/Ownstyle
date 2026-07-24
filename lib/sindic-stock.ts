@@ -48,3 +48,50 @@ export async function notificarConsumoStockSindic(item: {
     console.error("[v0] No se pudo contactar a Sindic para descontar stock:", error)
   }
 }
+
+// Hermana de notificarConsumoStockSindic, pero para DEVOLVER stock — ej. cuando se
+// completa un cambio acá y vuelve la prenda que el cliente devolvió. Mismo criterio de
+// no frenar la operación en Ownstyle si Sindic no responde.
+export async function notificarReposicionStockSindic(item: {
+  modelo: string | null
+  color: string | null
+  talla: string | null
+  quantity: number
+  reference: string
+}) {
+  const baseUrl = process.env.SINDIC_API_URL
+  const apiKey = process.env.SINDIC_API_KEY
+
+  if (!baseUrl || !apiKey) {
+    console.error("[v0] SINDIC_API_URL o SINDIC_API_KEY no configurados; no se pudo avisar la reposición de stock")
+    return
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/api/stock/reposicion-externa`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        source: "ownstyle",
+        reference: item.reference,
+        items: [
+          {
+            modelo: item.modelo,
+            color: item.color,
+            talla: item.talla,
+            quantity: item.quantity,
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      console.error("[v0] Sindic respondió con error al reponer stock:", response.status, await response.text())
+    }
+  } catch (error) {
+    console.error("[v0] No se pudo contactar a Sindic para reponer stock:", error)
+  }
+}

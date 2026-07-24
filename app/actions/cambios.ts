@@ -2,6 +2,7 @@
 
 import { sql } from "@/lib/db"
 import { revalidatePath } from "next/cache"
+import { notificarConsumoStockSindic, notificarReposicionStockSindic } from "@/lib/sindic-stock"
 
 interface CambioDetalle {
   id_producto_entregado: number
@@ -55,21 +56,34 @@ export async function createCambio(data: CambioData) {
 
       // Descontar stock del producto ENTREGADO
       const [productoEntregado] = await sql`
-        SELECT stock_actual FROM productos WHERE id_producto = ${detalle.id_producto_entregado}
-      `
-      const stockAnteriorEntregado = productoEntregado.stock_actual
-      const stockNuevoEntregado = stockAnteriorEntregado - 1
-
-      await sql`
-        UPDATE productos 
-        SET stock_actual = ${stockNuevoEntregado}
-        WHERE id_producto = ${detalle.id_producto_entregado}
+        SELECT stock_actual, categoria, modelo, color, talle FROM productos WHERE id_producto = ${detalle.id_producto_entregado}
       `
 
-      await sql`
-        INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
-        VALUES (${detalle.id_producto_entregado}, 'salida', 1, ${stockAnteriorEntregado}, ${stockNuevoEntregado}, ${`Cambio #${idCambio} - Producto entregado`})
-      `
+      // Los productos de categoria "Ropa" tienen stock ilimitado acá (ver app/actions/ventas.ts):
+      // no se descuenta stock local, se avisa a Sindic para que descuente el suyo.
+      if (productoEntregado.categoria === "Ropa") {
+        await notificarConsumoStockSindic({
+          modelo: productoEntregado.modelo,
+          color: productoEntregado.color,
+          talla: productoEntregado.talle,
+          quantity: 1,
+          reference: `cambio-${idCambio}`,
+        })
+      } else {
+        const stockAnteriorEntregado = productoEntregado.stock_actual
+        const stockNuevoEntregado = stockAnteriorEntregado - 1
+
+        await sql`
+          UPDATE productos
+          SET stock_actual = ${stockNuevoEntregado}
+          WHERE id_producto = ${detalle.id_producto_entregado}
+        `
+
+        await sql`
+          INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
+          VALUES (${detalle.id_producto_entregado}, 'salida', 1, ${stockAnteriorEntregado}, ${stockNuevoEntregado}, ${`Cambio #${idCambio} - Producto entregado`})
+        `
+      }
     }
 
     revalidatePath("/cambios")
@@ -106,8 +120,20 @@ export async function completarCambio(idCambio: number) {
     if (detalles.length > 0) {
       for (const detalle of detalles) {
         const [productoRecibido] = await sql`
-          SELECT stock_actual FROM productos WHERE id_producto = ${detalle.id_producto_recibido}
+          SELECT stock_actual, categoria, modelo, color, talle FROM productos WHERE id_producto = ${detalle.id_producto_recibido}
         `
+
+        if (productoRecibido.categoria === "Ropa") {
+          await notificarReposicionStockSindic({
+            modelo: productoRecibido.modelo,
+            color: productoRecibido.color,
+            talla: productoRecibido.talle,
+            quantity: 1,
+            reference: `cambio-${idCambio}`,
+          })
+          continue
+        }
+
         const stockAnterior = productoRecibido.stock_actual
         const stockNuevo = stockAnterior + 1
 
@@ -123,19 +149,30 @@ export async function completarCambio(idCambio: number) {
     } else {
       // Fallback: usar los campos de la tabla principal (cambios viejos)
       const [productoRecibido] = await sql`
-        SELECT stock_actual FROM productos WHERE id_producto = ${cambio.id_producto_recibido}
-      `
-      const stockAnterior = productoRecibido.stock_actual
-      const stockNuevo = stockAnterior + 1
-
-      await sql`
-        UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${cambio.id_producto_recibido}
+        SELECT stock_actual, categoria, modelo, color, talle FROM productos WHERE id_producto = ${cambio.id_producto_recibido}
       `
 
-      await sql`
-        INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
-        VALUES (${cambio.id_producto_recibido}, 'entrada', 1, ${stockAnterior}, ${stockNuevo}, ${`Cambio #${idCambio} - Producto recibido`})
-      `
+      if (productoRecibido.categoria === "Ropa") {
+        await notificarReposicionStockSindic({
+          modelo: productoRecibido.modelo,
+          color: productoRecibido.color,
+          talla: productoRecibido.talle,
+          quantity: 1,
+          reference: `cambio-${idCambio}`,
+        })
+      } else {
+        const stockAnterior = productoRecibido.stock_actual
+        const stockNuevo = stockAnterior + 1
+
+        await sql`
+          UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${cambio.id_producto_recibido}
+        `
+
+        await sql`
+          INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
+          VALUES (${cambio.id_producto_recibido}, 'entrada', 1, ${stockAnterior}, ${stockNuevo}, ${`Cambio #${idCambio} - Producto recibido`})
+        `
+      }
     }
 
     await sql`
@@ -173,66 +210,112 @@ export async function eliminarCambio(idCambio: number) {
       for (const detalle of detalles) {
         // Devolver stock del producto ENTREGADO (fue sacado del inventario al crear el cambio)
         const [productoEntregado] = await sql`
-          SELECT stock_actual FROM productos WHERE id_producto = ${detalle.id_producto_entregado}
-        `
-        const stockAnterior = productoEntregado.stock_actual
-        const stockNuevo = stockAnterior + 1
-
-        await sql`
-          UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${detalle.id_producto_entregado}
+          SELECT stock_actual, categoria, modelo, color, talle FROM productos WHERE id_producto = ${detalle.id_producto_entregado}
         `
 
-        await sql`
-          INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
-          VALUES (${detalle.id_producto_entregado}, 'entrada', 1, ${stockAnterior}, ${stockNuevo}, ${`Cambio #${idCambio} eliminado - Stock restaurado`})
-        `
-
-        // Si el cambio estaba completado, tambien revertir los productos recibidos
-        if (cambio.estado === "completado") {
-          const [productoRecibido] = await sql`
-            SELECT stock_actual FROM productos WHERE id_producto = ${detalle.id_producto_recibido}
-          `
-          const stockAntRec = productoRecibido.stock_actual
-          const stockNuevoRec = Math.max(0, stockAntRec - 1)
+        if (productoEntregado.categoria === "Ropa") {
+          // Se había descontado de Sindic al crear el cambio: ahora se repone allá.
+          await notificarReposicionStockSindic({
+            modelo: productoEntregado.modelo,
+            color: productoEntregado.color,
+            talla: productoEntregado.talle,
+            quantity: 1,
+            reference: `cambio-${idCambio}-eliminado`,
+          })
+        } else {
+          const stockAnterior = productoEntregado.stock_actual
+          const stockNuevo = stockAnterior + 1
 
           await sql`
-            UPDATE productos SET stock_actual = ${stockNuevoRec} WHERE id_producto = ${detalle.id_producto_recibido}
+            UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${detalle.id_producto_entregado}
           `
 
           await sql`
             INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
-            VALUES (${detalle.id_producto_recibido}, 'salida', 1, ${stockAntRec}, ${stockNuevoRec}, ${`Cambio #${idCambio} eliminado - Stock revertido`})
+            VALUES (${detalle.id_producto_entregado}, 'entrada', 1, ${stockAnterior}, ${stockNuevo}, ${`Cambio #${idCambio} eliminado - Stock restaurado`})
           `
+        }
+
+        // Si el cambio estaba completado, tambien revertir los productos recibidos
+        if (cambio.estado === "completado") {
+          const [productoRecibido] = await sql`
+            SELECT stock_actual, categoria, modelo, color, talle FROM productos WHERE id_producto = ${detalle.id_producto_recibido}
+          `
+
+          if (productoRecibido.categoria === "Ropa") {
+            // Se había repuesto en Sindic al completar el cambio: ahora se descuenta de nuevo.
+            await notificarConsumoStockSindic({
+              modelo: productoRecibido.modelo,
+              color: productoRecibido.color,
+              talla: productoRecibido.talle,
+              quantity: 1,
+              reference: `cambio-${idCambio}-eliminado`,
+            })
+          } else {
+            const stockAntRec = productoRecibido.stock_actual
+            const stockNuevoRec = Math.max(0, stockAntRec - 1)
+
+            await sql`
+              UPDATE productos SET stock_actual = ${stockNuevoRec} WHERE id_producto = ${detalle.id_producto_recibido}
+            `
+
+            await sql`
+              INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
+              VALUES (${detalle.id_producto_recibido}, 'salida', 1, ${stockAntRec}, ${stockNuevoRec}, ${`Cambio #${idCambio} eliminado - Stock revertido`})
+            `
+          }
         }
       }
     } else {
       // Fallback para cambios viejos sin detalles
       if (cambio.id_producto_entregado) {
         const [pe] = await sql`
-          SELECT stock_actual FROM productos WHERE id_producto = ${cambio.id_producto_entregado}
+          SELECT stock_actual, categoria, modelo, color, talle FROM productos WHERE id_producto = ${cambio.id_producto_entregado}
         `
-        const stockAnt = pe.stock_actual
-        const stockNuevo = stockAnt + 1
 
-        await sql`UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${cambio.id_producto_entregado}`
-        await sql`
-          INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
-          VALUES (${cambio.id_producto_entregado}, 'entrada', 1, ${stockAnt}, ${stockNuevo}, ${`Cambio #${idCambio} eliminado - Stock restaurado`})
-        `
+        if (pe.categoria === "Ropa") {
+          await notificarReposicionStockSindic({
+            modelo: pe.modelo,
+            color: pe.color,
+            talla: pe.talle,
+            quantity: 1,
+            reference: `cambio-${idCambio}-eliminado`,
+          })
+        } else {
+          const stockAnt = pe.stock_actual
+          const stockNuevo = stockAnt + 1
+
+          await sql`UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${cambio.id_producto_entregado}`
+          await sql`
+            INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
+            VALUES (${cambio.id_producto_entregado}, 'entrada', 1, ${stockAnt}, ${stockNuevo}, ${`Cambio #${idCambio} eliminado - Stock restaurado`})
+          `
+        }
       }
 
       if (cambio.estado === "completado" && cambio.id_producto_recibido) {
         const [pr] = await sql`
-          SELECT stock_actual FROM productos WHERE id_producto = ${cambio.id_producto_recibido}
+          SELECT stock_actual, categoria, modelo, color, talle FROM productos WHERE id_producto = ${cambio.id_producto_recibido}
         `
-        const stockAnt = pr.stock_actual
-        const stockNuevo = Math.max(0, stockAnt - 1)
 
-        await sql`UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${cambio.id_producto_recibido}`
-        await sql`
-          INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
-          VALUES (${cambio.id_producto_recibido}, 'salida', 1, ${stockAnt}, ${stockNuevo}, ${`Cambio #${idCambio} eliminado - Stock revertido`})
-        `
+        if (pr.categoria === "Ropa") {
+          await notificarConsumoStockSindic({
+            modelo: pr.modelo,
+            color: pr.color,
+            talla: pr.talle,
+            quantity: 1,
+            reference: `cambio-${idCambio}-eliminado`,
+          })
+        } else {
+          const stockAnt = pr.stock_actual
+          const stockNuevo = Math.max(0, stockAnt - 1)
+
+          await sql`UPDATE productos SET stock_actual = ${stockNuevo} WHERE id_producto = ${cambio.id_producto_recibido}`
+          await sql`
+            INSERT INTO stock_movimientos (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo)
+            VALUES (${cambio.id_producto_recibido}, 'salida', 1, ${stockAnt}, ${stockNuevo}, ${`Cambio #${idCambio} eliminado - Stock revertido`})
+          `
+        }
       }
     }
 
