@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Eye, Search, Trash2, Loader2, Banknote, CreditCard, Building2, CheckCircle, Receipt } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/format"
 import Link from "next/link"
@@ -53,6 +54,7 @@ export function VentasTable({ ventas, onFacturado, soloSinFacturar = false }: Ve
   const [deletedComprobante, setDeletedComprobante] = useState("")
   const [seleccionadas, setSeleccionadas] = useState<number[]>([])
   const [facturando, setFacturando] = useState(false)
+  const [filtroFactura, setFiltroFactura] = useState<"todas" | "facturadas" | "sin_facturar">("todas")
 
   const esFacturable = (venta: (typeof ventas)[number]) => venta.estado === "completado" && !venta.factura_numero
 
@@ -64,7 +66,15 @@ export function VentasTable({ ventas, onFacturado, soloSinFacturar = false }: Ve
       venta.numero_comprobante?.toLowerCase().includes(search.toLowerCase()) ||
       nombre.toLowerCase().includes(search.toLowerCase()) ||
       venta.barrio?.toLowerCase().includes(search.toLowerCase())
-    return matchesSearch
+
+    const matchesFiltroFactura =
+      soloSinFacturar || filtroFactura === "todas"
+        ? true
+        : filtroFactura === "facturadas"
+          ? Boolean(venta.factura_numero)
+          : !venta.factura_numero
+
+    return matchesSearch && matchesFiltroFactura
   })
 
   const getStatusBadge = (estado: string) => {
@@ -202,14 +212,28 @@ export function VentasTable({ ventas, onFacturado, soloSinFacturar = false }: Ve
     <Card className="shadow-sm">
       <CardContent className="p-6">
         <div className="flex items-center justify-between mb-6 gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por comprobante, nombre o barrio..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+          <div className="flex items-center gap-3 flex-1">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por comprobante, nombre o barrio..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            {!soloSinFacturar && (
+              <Select value={filtroFactura} onValueChange={(value) => setFiltroFactura(value as typeof filtroFactura)}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todas">Todas las ventas</SelectItem>
+                  <SelectItem value="facturadas">Facturadas</SelectItem>
+                  <SelectItem value="sin_facturar">Sin facturar</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </div>
           {soloSinFacturar && (
             <Button onClick={handleFacturarSeleccionadas} disabled={facturando || seleccionadas.length === 0}>
