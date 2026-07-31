@@ -6,7 +6,7 @@ import { VentasStats } from "./ventas-stats"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Plus, Calendar, Filter, X, Upload } from "lucide-react"
+import { Plus, Calendar, Filter, X, Upload, Receipt } from "lucide-react"
 import Link from "next/link"
 import useSWR from "swr"
 
@@ -16,6 +16,7 @@ export function VentasClient() {
   const [fechaDesde, setFechaDesde] = useState("")
   const [fechaHasta, setFechaHasta] = useState("")
   const [filtroActivo, setFiltroActivo] = useState(false)
+  const [modoFacturacion, setModoFacturacion] = useState(false)
 
   // Construir URL con parámetros
   const buildUrl = () => {
@@ -84,6 +85,13 @@ export function VentasClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={modoFacturacion ? "default" : "outline"}
+            onClick={() => setModoFacturacion((prev) => !prev)}
+          >
+            <Receipt className="h-4 w-4 mr-2" />
+            {modoFacturacion ? "Salir de Facturar" : "Facturar"}
+          </Button>
           <Link href="/ventas/carga-masiva">
             <Button variant="outline">
               <Upload className="h-4 w-4 mr-2" />
@@ -98,6 +106,16 @@ export function VentasClient() {
           </Link>
         </div>
       </div>
+
+      {modoFacturacion && (
+        <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 px-3 py-2 rounded-md">
+          <Receipt className="h-4 w-4" />
+          <span>
+            Modo facturación: mostrando solo ventas sin facturar, todas preseleccionadas. Destildá las que no
+            quieras y apretá "Facturar seleccionadas".
+          </span>
+        </div>
+      )}
 
       <Card className="border-dashed">
         <CardContent className="p-4">
@@ -171,7 +189,7 @@ export function VentasClient() {
           <CardContent className="p-8 text-center text-muted-foreground">Cargando ventas...</CardContent>
         </Card>
       ) : (
-        <VentasTable ventas={ventas} onFacturado={() => mutate()} />
+        <VentasTable ventas={ventas} onFacturado={() => mutate()} soloSinFacturar={modoFacturacion} />
       )}
     </div>
   )

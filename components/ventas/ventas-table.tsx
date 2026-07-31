@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -37,6 +37,7 @@ interface VentasTableProps {
     factura_tipo_comprobante?: number | null
   })[]
   onFacturado?: () => void
+  soloSinFacturar?: boolean
 }
 
 const NOMBRE_COMPROBANTE: Record<number, string> = {
@@ -45,7 +46,7 @@ const NOMBRE_COMPROBANTE: Record<number, string> = {
   11: "Factura C",
 }
 
-export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
+export function VentasTable({ ventas, onFacturado, soloSinFacturar = false }: VentasTableProps) {
   const [search, setSearch] = useState("")
   const [deleting, setDeleting] = useState<number | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
@@ -53,7 +54,11 @@ export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
   const [seleccionadas, setSeleccionadas] = useState<number[]>([])
   const [facturando, setFacturando] = useState(false)
 
-  const filteredVentas = ventas.filter((venta) => {
+  const esFacturable = (venta: (typeof ventas)[number]) => venta.estado === "completado" && !venta.factura_numero
+
+  const ventasBase = soloSinFacturar ? ventas.filter(esFacturable) : ventas
+
+  const filteredVentas = ventasBase.filter((venta) => {
     const nombre = venta.nombre_cliente || venta.cliente_nombre || ""
     const matchesSearch =
       venta.numero_comprobante?.toLowerCase().includes(search.toLowerCase()) ||
@@ -100,10 +105,20 @@ export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
     }
   }
 
-  const esFacturable = (venta: (typeof ventas)[number]) => venta.estado === "completado" && !venta.factura_numero
-
   const facturables = filteredVentas.filter(esFacturable)
   const todasSeleccionadas = facturables.length > 0 && facturables.every((v) => seleccionadas.includes(v.id_movimiento))
+
+  // Al entrar en modo facturación, preseleccionar todas las facturables para
+  // que el usuario solo tenga que destildar las que no quiere, no ir eligiendo
+  // una por una.
+  useEffect(() => {
+    if (soloSinFacturar) {
+      setSeleccionadas(ventas.filter(esFacturable).map((v) => v.id_movimiento))
+    } else {
+      setSeleccionadas([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soloSinFacturar])
 
   const toggleSeleccionada = (idMovimiento: number) => {
     setSeleccionadas((prev) =>
@@ -196,8 +211,8 @@ export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
               className="pl-9"
             />
           </div>
-          {seleccionadas.length > 0 && (
-            <Button onClick={handleFacturarSeleccionadas} disabled={facturando}>
+          {soloSinFacturar && (
+            <Button onClick={handleFacturarSeleccionadas} disabled={facturando || seleccionadas.length === 0}>
               {facturando ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
@@ -212,14 +227,16 @@ export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={todasSeleccionadas}
-                    onCheckedChange={toggleSeleccionarTodas}
-                    disabled={facturables.length === 0}
-                    aria-label="Seleccionar todas las ventas facturables"
-                  />
-                </TableHead>
+                {soloSinFacturar && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={todasSeleccionadas}
+                      onCheckedChange={toggleSeleccionarTodas}
+                      disabled={facturables.length === 0}
+                      aria-label="Seleccionar todas las ventas facturables"
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="font-semibold">N° Comprobante</TableHead>
                 <TableHead className="font-semibold">Fecha</TableHead>
                 <TableHead className="font-semibold">Nombre</TableHead>
@@ -234,8 +251,8 @@ export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
             <TableBody>
               {filteredVentas.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    No se encontraron ventas
+                  <TableCell colSpan={soloSinFacturar ? 10 : 9} className="text-center py-8 text-muted-foreground">
+                    {soloSinFacturar ? "No hay ventas sin facturar" : "No se encontraron ventas"}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -245,14 +262,16 @@ export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
                   const comprobante = venta.numero_comprobante || `V-${venta.id_movimiento}`
                   return (
                     <TableRow key={venta.id_movimiento} className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                      <TableCell>
-                        <Checkbox
-                          checked={seleccionadas.includes(venta.id_movimiento)}
-                          onCheckedChange={() => toggleSeleccionada(venta.id_movimiento)}
-                          disabled={!esFacturable(venta)}
-                          aria-label={`Seleccionar venta ${comprobante} para facturar`}
-                        />
-                      </TableCell>
+                      {soloSinFacturar && (
+                        <TableCell>
+                          <Checkbox
+                            checked={seleccionadas.includes(venta.id_movimiento)}
+                            onCheckedChange={() => toggleSeleccionada(venta.id_movimiento)}
+                            disabled={!esFacturable(venta)}
+                            aria-label={`Seleccionar venta ${comprobante} para facturar`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-mono font-medium">{comprobante}</TableCell>
                       <TableCell>{formatDate(venta.fecha)}</TableCell>
                       <TableCell className="font-medium">{nombreMostrar}</TableCell>
