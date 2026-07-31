@@ -221,7 +221,17 @@ export function VentasClient() {
               <CardContent className="p-8 text-center text-muted-foreground">Cargando ventas...</CardContent>
             </Card>
           ) : (
-            <VentasTable ventas={ventasAFacturar} onFacturado={() => mutateFacturacion()} soloSinFacturar />
+            <VentasTable
+              ventas={ventasAFacturar}
+              onFacturado={() => {
+                // Al terminar de facturar, volver directamente al listado normal de ventas
+                setModoFacturacion(false)
+                setFacturarDesde("")
+                setFacturarHasta("")
+                mutate()
+              }}
+              soloSinFacturar
+            />
           )}
         </>
       ) : (
