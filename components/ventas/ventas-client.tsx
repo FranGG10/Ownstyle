@@ -17,6 +17,8 @@ export function VentasClient() {
   const [fechaHasta, setFechaHasta] = useState("")
   const [filtroActivo, setFiltroActivo] = useState(false)
   const [modoFacturacion, setModoFacturacion] = useState(false)
+  const [facturarDesde, setFacturarDesde] = useState("")
+  const [facturarHasta, setFacturarHasta] = useState("")
 
   // Construir URL con parámetros
   const buildUrl = () => {
@@ -30,6 +32,15 @@ export function VentasClient() {
   const { data, error, isLoading, mutate } = useSWR(buildUrl(), fetcher, {
     revalidateOnFocus: false,
   })
+
+  const periodoFacturarCompleto = Boolean(facturarDesde && facturarHasta)
+
+  const { data: facturacionData, isLoading: loadingFacturacion, mutate: mutateFacturacion } = useSWR(
+    modoFacturacion && periodoFacturarCompleto
+      ? `/api/ventas?fechaDesde=${facturarDesde}&fechaHasta=${facturarHasta}`
+      : null,
+    fetcher,
+  )
 
   const aplicarFiltro = () => {
     setFiltroActivo(fechaDesde !== "" || fechaHasta !== "")
@@ -66,6 +77,40 @@ export function VentasClient() {
     setFiltroActivo(true)
   }
 
+  const setPeriodoFacturarRapido = (tipo: "hoy" | "semana" | "mes" | "año") => {
+    const hoy = new Date()
+    const desde = new Date()
+
+    switch (tipo) {
+      case "hoy":
+        desde.setHours(0, 0, 0, 0)
+        break
+      case "semana":
+        desde.setDate(hoy.getDate() - 7)
+        break
+      case "mes":
+        desde.setMonth(hoy.getMonth(), 1)
+        break
+      case "año":
+        desde.setMonth(0, 1)
+        break
+    }
+
+    setFacturarDesde(desde.toISOString().split("T")[0])
+    setFacturarHasta(hoy.toISOString().split("T")[0])
+  }
+
+  const toggleModoFacturacion = () => {
+    setModoFacturacion((prev) => {
+      if (prev) {
+        // Al salir, limpiar el período para que la próxima vez lo vuelva a pedir
+        setFacturarDesde("")
+        setFacturarHasta("")
+      }
+      return !prev
+    })
+  }
+
   useEffect(() => {
     if (filtroActivo || (!fechaDesde && !fechaHasta)) {
       mutate()
@@ -74,6 +119,7 @@ export function VentasClient() {
 
   const ventas = data?.ventas || []
   const stats = data?.stats || { total: 0, totalPares: 0, totalVentas: 0, ventasMes: 0 }
+  const ventasAFacturar = facturacionData?.ventas || []
 
   return (
     <div className="p-6 space-y-6">
@@ -85,10 +131,7 @@ export function VentasClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant={modoFacturacion ? "default" : "outline"}
-            onClick={() => setModoFacturacion((prev) => !prev)}
-          >
+          <Button variant={modoFacturacion ? "default" : "outline"} onClick={toggleModoFacturacion}>
             <Receipt className="h-4 w-4 mr-2" />
             {modoFacturacion ? "Salir de Facturar" : "Facturar"}
           </Button>
@@ -107,89 +150,157 @@ export function VentasClient() {
         </div>
       </div>
 
-      {modoFacturacion && (
-        <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 px-3 py-2 rounded-md">
-          <Receipt className="h-4 w-4" />
-          <span>
-            Modo facturación: mostrando solo ventas sin facturar, todas preseleccionadas. Destildá las que no
-            quieras y apretá "Facturar seleccionadas".
-          </span>
-        </div>
-      )}
+      {modoFacturacion ? (
+        <>
+          <Card className="border-dashed">
+            <CardContent className="p-4">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Período a facturar:</span>
+                </div>
 
-      <Card className="border-dashed">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Filtrar por fecha:</span>
-            </div>
+                <div className="flex items-center gap-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Desde</label>
+                    <Input
+                      type="date"
+                      value={facturarDesde}
+                      onChange={(e) => setFacturarDesde(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Hasta</label>
+                    <Input
+                      type="date"
+                      value={facturarHasta}
+                      onChange={(e) => setFacturarHasta(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                </div>
 
-            <div className="flex items-center gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Desde</label>
-                <Input
-                  type="date"
-                  value={fechaDesde}
-                  onChange={(e) => setFechaDesde(e.target.value)}
-                  className="w-40"
-                />
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPeriodoFacturarRapido("hoy")}>
+                    Hoy
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPeriodoFacturarRapido("semana")}>
+                    Última Semana
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPeriodoFacturarRapido("mes")}>
+                    Este Mes
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPeriodoFacturarRapido("año")}>
+                    Este Año
+                  </Button>
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Hasta</label>
-                <Input
-                  type="date"
-                  value={fechaHasta}
-                  onChange={(e) => setFechaHasta(e.target.value)}
-                  className="w-40"
-                />
-              </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setFiltroRapido("hoy")}>
-                Hoy
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setFiltroRapido("semana")}>
-                Última Semana
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setFiltroRapido("mes")}>
-                Este Mes
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setFiltroRapido("año")}>
-                Este Año
-              </Button>
-            </div>
+              {periodoFacturarCompleto && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 px-3 py-2 rounded-md">
+                  <Receipt className="h-4 w-4" />
+                  <span>
+                    Ventas sin facturar entre {new Date(facturarDesde).toLocaleDateString("es-AR")} y{" "}
+                    {new Date(facturarHasta).toLocaleDateString("es-AR")}, todas preseleccionadas. Destildá las que
+                    no quieras y apretá "Facturar seleccionadas".
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-            {filtroActivo && (
-              <Button variant="ghost" size="sm" onClick={limpiarFiltros} className="text-muted-foreground">
-                <X className="h-4 w-4 mr-1" />
-                Limpiar
-              </Button>
-            )}
-          </div>
-
-          {filtroActivo && (
-            <div className="mt-3 flex items-center gap-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 px-3 py-2 rounded-md">
-              <Filter className="h-4 w-4" />
-              <span>
-                Mostrando ventas
-                {fechaDesde && ` desde ${new Date(fechaDesde).toLocaleDateString("es-AR")}`}
-                {fechaHasta && ` hasta ${new Date(fechaHasta).toLocaleDateString("es-AR")}`}
-              </span>
-            </div>
+          {!periodoFacturarCompleto ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                Seleccioná un período (Desde y Hasta) para ver las ventas sin facturar.
+              </CardContent>
+            </Card>
+          ) : loadingFacturacion ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">Cargando ventas...</CardContent>
+            </Card>
+          ) : (
+            <VentasTable ventas={ventasAFacturar} onFacturado={() => mutateFacturacion()} soloSinFacturar />
           )}
-        </CardContent>
-      </Card>
-
-      <VentasStats stats={stats} />
-
-      {isLoading ? (
-        <Card>
-          <CardContent className="p-8 text-center text-muted-foreground">Cargando ventas...</CardContent>
-        </Card>
+        </>
       ) : (
-        <VentasTable ventas={ventas} onFacturado={() => mutate()} soloSinFacturar={modoFacturacion} />
+        <>
+          <Card className="border-dashed">
+            <CardContent className="p-4">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Filtrar por fecha:</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Desde</label>
+                    <Input
+                      type="date"
+                      value={fechaDesde}
+                      onChange={(e) => setFechaDesde(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Hasta</label>
+                    <Input
+                      type="date"
+                      value={fechaHasta}
+                      onChange={(e) => setFechaHasta(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setFiltroRapido("hoy")}>
+                    Hoy
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setFiltroRapido("semana")}>
+                    Última Semana
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setFiltroRapido("mes")}>
+                    Este Mes
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setFiltroRapido("año")}>
+                    Este Año
+                  </Button>
+                </div>
+
+                {filtroActivo && (
+                  <Button variant="ghost" size="sm" onClick={limpiarFiltros} className="text-muted-foreground">
+                    <X className="h-4 w-4 mr-1" />
+                    Limpiar
+                  </Button>
+                )}
+              </div>
+
+              {filtroActivo && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 px-3 py-2 rounded-md">
+                  <Filter className="h-4 w-4" />
+                  <span>
+                    Mostrando ventas
+                    {fechaDesde && ` desde ${new Date(fechaDesde).toLocaleDateString("es-AR")}`}
+                    {fechaHasta && ` hasta ${new Date(fechaHasta).toLocaleDateString("es-AR")}`}
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <VentasStats stats={stats} />
+
+          {isLoading ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">Cargando ventas...</CardContent>
+            </Card>
+          ) : (
+            <VentasTable ventas={ventas} onFacturado={() => mutate()} />
+          )}
+        </>
       )}
     </div>
   )
