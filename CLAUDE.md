@@ -147,14 +147,14 @@ Variables de entorno (mismo patrón que `SINDIC_*`):
   modo homologación (CUIT de pruebas 20409378472, sin certificado).
 - `ARCA_PRODUCCION` — `"true"` para pasar a producción real.
 
-**Estado real (2026-07-30)**: ya existe un certificado de producción real
-para la clienta (Daniela Angel Medone, CUIT 27-44262623-0), generado y ya
-asociado al servicio "Facturación Electrónica" en el Administrador de
-Relaciones de Clave Fiscal de ARCA. Los archivos (`.crt`/`.key`) están
-guardados en `certs/arca/` (gitignoreado, nunca se sube al repo — ver
-`.gitignore`). **Todavía no se activó producción**: `.env.local` sigue
-apuntando al CUIT/modo de pruebas hasta que Francisco confirme el pase
-(afecta al CUIT real y emite CAEs reales e irreversibles).
+**Estado real (2026-07-31): PRODUCCIÓN ACTIVA.** `ARCA_PRODUCCION="true"` en
+`.env.local` y en Vercel (Production). El sistema factura contra el CUIT real
+de la clienta (Daniela Angel Medone, 27-44262623-0), Punto de Venta **3**
+(el 1 y 2 no están habilitados para Web Services, solo el 3 — verificado
+contra ARCA con `getSalesPoints()` antes de activar). Certificado/clave en
+`certs/arca/` (gitignoreado, nunca se sube al repo — ver `.gitignore`) y
+también cargados como `ARCA_CERT`/`ARCA_KEY` en Vercel. **A partir de acá,
+cualquier "Facturar" en la app emite una Factura fiscal real e irreversible.**
 
 Tabla `facturas` (`scripts/008-facturacion-arca.sql` + `010-facturas-desglose-iva.sql`):
 una fila por venta efectivamente facturada (CAE real), con `tipo_comprobante`
