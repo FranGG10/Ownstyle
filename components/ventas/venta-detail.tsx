@@ -28,6 +28,7 @@ interface VentaDetailProps {
     factura_cae: string | null
     factura_cae_vencimiento: string | null
     factura_tipo_comprobante: number | null
+    factura_fecha_emision: string | null
     detalles: {
       id_detalle: number
       codigo_sku: string
@@ -64,6 +65,7 @@ export function VentaDetail({ venta }: VentaDetailProps) {
     cae: string
     vencimiento: string
     tipoComprobante: number
+    fechaEmision: string
   } | null>(
     venta.factura_numero
       ? {
@@ -72,6 +74,7 @@ export function VentaDetail({ venta }: VentaDetailProps) {
           cae: venta.factura_cae!,
           vencimiento: venta.factura_cae_vencimiento!,
           tipoComprobante: venta.factura_tipo_comprobante || 11,
+          fechaEmision: venta.factura_fecha_emision!,
         }
       : null,
   )
@@ -87,6 +90,7 @@ export function VentaDetail({ venta }: VentaDetailProps) {
           cae: resultado.cae!,
           vencimiento: resultado.vencimiento!,
           tipoComprobante: resultado.tipoComprobante || 11,
+          fechaEmision: resultado.fechaEmision!,
         })
       } else {
         alert(resultado.error || "Error al facturar la venta")
@@ -250,7 +254,11 @@ export function VentaDetail({ venta }: VentaDetailProps) {
         </CardHeader>
         <CardContent>
           {facturaEmitida ? (
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-5">
+              <div>
+                <p className="text-sm text-muted-foreground">Fecha de Emisión</p>
+                <p className="font-medium">{formatDate(facturaEmitida.fechaEmision)}</p>
+              </div>
               <div>
                 <p className="text-sm text-muted-foreground">Punto de Venta</p>
                 <p className="font-mono font-medium">{String(facturaEmitida.puntoVenta).padStart(4, "0")}</p>

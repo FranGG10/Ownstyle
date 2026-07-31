@@ -109,12 +109,16 @@ function tipoComprobanteYMontos(
   }
 }
 
-function fechaHoyArca() {
+function fechaHoyISO() {
   const hoy = new Date()
   const yyyy = hoy.getFullYear()
   const mm = String(hoy.getMonth() + 1).padStart(2, "0")
   const dd = String(hoy.getDate()).padStart(2, "0")
-  return Number(`${yyyy}${mm}${dd}`)
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function fechaISOaArca(fechaIso: string) {
+  return Number(fechaIso.replace(/-/g, ""))
 }
 
 async function getConfig(clave: string, valorDefault: string) {
@@ -160,6 +164,8 @@ export async function emitirFactura(idMovimiento: number) {
   const tasaIva = Number(await getConfig("iva_tasa", "21"))
   const { cbteTipo, impNeto, impIva, iva } = tipoComprobanteYMontos(condicionEmisor, venta, importeTotal, tasaIva)
 
+  const fechaEmision = fechaHoyISO()
+
   try {
     const afip = getAfipClient()
 
@@ -169,7 +175,7 @@ export async function emitirFactura(idMovimiento: number) {
       Concepto: 1, // Productos
       DocTipo: receptor.DocTipo,
       DocNro: receptor.DocNro,
-      CbteFch: fechaHoyArca(),
+      CbteFch: fechaISOaArca(fechaEmision),
       ImpTotal: importeTotal,
       ImpTotConc: 0,
       ImpNeto: impNeto,
@@ -185,12 +191,12 @@ export async function emitirFactura(idMovimiento: number) {
     await sql`
       INSERT INTO facturas (
         id_movimiento, tipo_comprobante, punto_venta, numero_comprobante,
-        cae, cae_vencimiento, doc_tipo, doc_nro, importe_total, imp_neto, imp_iva
+        cae, cae_vencimiento, doc_tipo, doc_nro, importe_total, imp_neto, imp_iva, fecha_emision
       )
       VALUES (
         ${idMovimiento}, ${cbteTipo}, ${puntoVenta}, ${resultado.voucherNumber},
         ${resultado.CAE}, ${resultado.CAEFchVto}, ${receptor.DocTipo}, ${String(receptor.DocNro)},
-        ${importeTotal}, ${impNeto}, ${impIva}
+        ${importeTotal}, ${impNeto}, ${impIva}, ${fechaEmision}
       )
     `
 
@@ -201,6 +207,7 @@ export async function emitirFactura(idMovimiento: number) {
       numero: resultado.voucherNumber,
       puntoVenta,
       tipoComprobante: cbteTipo,
+      fechaEmision,
     }
   } catch (error: any) {
     console.error("[v0] Error al facturar venta", idMovimiento, "en ARCA:", error)

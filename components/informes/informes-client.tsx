@@ -343,7 +343,7 @@ export default function InformesClient() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Fecha</TableHead>
+                          <TableHead>Fecha Facturación</TableHead>
                           <TableHead>Cliente</TableHead>
                           <TableHead>Comprobante</TableHead>
                           <TableHead>CAE</TableHead>
@@ -357,7 +357,7 @@ export default function InformesClient() {
                       <TableBody>
                         {facturacionData.facturas.map((f: any) => (
                           <TableRow key={f.id_factura}>
-                            <TableCell>{formatDate(f.fecha)}</TableCell>
+                            <TableCell>{formatDate(f.fecha_emision)}</TableCell>
                             <TableCell className="font-medium">{f.cliente_nombre}</TableCell>
                             <TableCell>
                               {f.tipo_comprobante_nombre} Nº {String(f.punto_venta).padStart(4, "0")}-
