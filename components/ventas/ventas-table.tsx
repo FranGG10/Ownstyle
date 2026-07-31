@@ -5,12 +5,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent } from "@/components/ui/card"
-import { Eye, Search, Trash2, Loader2, Banknote, CreditCard, Building2, CheckCircle } from "lucide-react"
+import { Eye, Search, Trash2, Loader2, Banknote, CreditCard, Building2, CheckCircle, Receipt } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/format"
 import Link from "next/link"
 import type { Movimiento } from "@/lib/db"
 import { deleteVenta } from "@/app/actions/ventas"
+import { facturarVentasLote } from "@/app/actions/facturacion"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,14 +26,32 @@ import {
 } from "@/components/ui/alert-dialog"
 
 interface VentasTableProps {
-  ventas: (Movimiento & { cliente_nombre?: string; nombre_cliente?: string; barrio?: string; medio_pago?: string })[]
+  ventas: (Movimiento & {
+    cliente_nombre?: string
+    nombre_cliente?: string
+    barrio?: string
+    medio_pago?: string
+    factura_punto_venta?: number | null
+    factura_numero?: number | null
+    factura_cae?: string | null
+    factura_tipo_comprobante?: number | null
+  })[]
+  onFacturado?: () => void
 }
 
-export function VentasTable({ ventas }: VentasTableProps) {
+const NOMBRE_COMPROBANTE: Record<number, string> = {
+  1: "Factura A",
+  6: "Factura B",
+  11: "Factura C",
+}
+
+export function VentasTable({ ventas, onFacturado }: VentasTableProps) {
   const [search, setSearch] = useState("")
   const [deleting, setDeleting] = useState<number | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
   const [deletedComprobante, setDeletedComprobante] = useState("")
+  const [seleccionadas, setSeleccionadas] = useState<number[]>([])
+  const [facturando, setFacturando] = useState(false)
 
   const filteredVentas = ventas.filter((venta) => {
     const nombre = venta.nombre_cliente || venta.cliente_nombre || ""
@@ -80,6 +100,50 @@ export function VentasTable({ ventas }: VentasTableProps) {
     }
   }
 
+  const esFacturable = (venta: (typeof ventas)[number]) => venta.estado === "completado" && !venta.factura_numero
+
+  const facturables = filteredVentas.filter(esFacturable)
+  const todasSeleccionadas = facturables.length > 0 && facturables.every((v) => seleccionadas.includes(v.id_movimiento))
+
+  const toggleSeleccionada = (idMovimiento: number) => {
+    setSeleccionadas((prev) =>
+      prev.includes(idMovimiento) ? prev.filter((id) => id !== idMovimiento) : [...prev, idMovimiento],
+    )
+  }
+
+  const toggleSeleccionarTodas = () => {
+    if (todasSeleccionadas) {
+      setSeleccionadas([])
+    } else {
+      setSeleccionadas(facturables.map((v) => v.id_movimiento))
+    }
+  }
+
+  const handleFacturarSeleccionadas = async () => {
+    if (seleccionadas.length === 0) return
+    setFacturando(true)
+    try {
+      const resultados = await facturarVentasLote(seleccionadas)
+      const entries = Object.entries(resultados)
+      const exitosas = entries.filter(([, r]) => r.success)
+      const fallidas = entries.filter(([, r]) => !r.success)
+
+      let mensaje = `Facturación terminada.\n\n${exitosas.length} venta(s) facturada(s) con éxito.`
+      if (fallidas.length > 0) {
+        mensaje += `\n${fallidas.length} venta(s) con error:\n`
+        mensaje += fallidas.map(([id, r]) => `- Venta #${id}: ${r.error}`).join("\n")
+      }
+      alert(mensaje)
+
+      setSeleccionadas([])
+      onFacturado?.()
+    } catch (error) {
+      alert("Error inesperado al facturar las ventas seleccionadas")
+    } finally {
+      setFacturando(false)
+    }
+  }
+
   const handleDelete = async (idMovimiento: number, comprobante: string) => {
     setDeleting(idMovimiento)
     try {
@@ -122,7 +186,7 @@ export function VentasTable({ ventas }: VentasTableProps) {
   return (
     <Card className="shadow-sm">
       <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 gap-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -132,12 +196,30 @@ export function VentasTable({ ventas }: VentasTableProps) {
               className="pl-9"
             />
           </div>
+          {seleccionadas.length > 0 && (
+            <Button onClick={handleFacturarSeleccionadas} disabled={facturando}>
+              {facturando ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Receipt className="h-4 w-4 mr-2" />
+              )}
+              Facturar seleccionadas ({seleccionadas.length})
+            </Button>
+          )}
         </div>
 
         <div className="rounded-lg border overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={todasSeleccionadas}
+                    onCheckedChange={toggleSeleccionarTodas}
+                    disabled={facturables.length === 0}
+                    aria-label="Seleccionar todas las ventas facturables"
+                  />
+                </TableHead>
                 <TableHead className="font-semibold">N° Comprobante</TableHead>
                 <TableHead className="font-semibold">Fecha</TableHead>
                 <TableHead className="font-semibold">Nombre</TableHead>
@@ -145,13 +227,14 @@ export function VentasTable({ ventas }: VentasTableProps) {
                 <TableHead className="font-semibold">Medio de Pago</TableHead>
                 <TableHead className="text-right font-semibold">Total</TableHead>
                 <TableHead className="text-center font-semibold">Estado</TableHead>
+                <TableHead className="text-center font-semibold">Factura</TableHead>
                 <TableHead className="text-right font-semibold">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredVentas.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     No se encontraron ventas
                   </TableCell>
                 </TableRow>
@@ -162,6 +245,14 @@ export function VentasTable({ ventas }: VentasTableProps) {
                   const comprobante = venta.numero_comprobante || `V-${venta.id_movimiento}`
                   return (
                     <TableRow key={venta.id_movimiento} className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                      <TableCell>
+                        <Checkbox
+                          checked={seleccionadas.includes(venta.id_movimiento)}
+                          onCheckedChange={() => toggleSeleccionada(venta.id_movimiento)}
+                          disabled={!esFacturable(venta)}
+                          aria-label={`Seleccionar venta ${comprobante} para facturar`}
+                        />
+                      </TableCell>
                       <TableCell className="font-mono font-medium">{comprobante}</TableCell>
                       <TableCell>{formatDate(venta.fecha)}</TableCell>
                       <TableCell className="font-medium">{nombreMostrar}</TableCell>
@@ -185,6 +276,23 @@ export function VentasTable({ ventas }: VentasTableProps) {
                         <Badge variant="outline" className={statusBadge.className}>
                           {statusBadge.label}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {venta.factura_numero ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700"
+                            title={`CAE ${venta.factura_cae}`}
+                          >
+                            {NOMBRE_COMPROBANTE[venta.factura_tipo_comprobante || 11] || "Factura"} Nº{" "}
+                            {String(venta.factura_punto_venta).padStart(4, "0")}-
+                            {String(venta.factura_numero).padStart(8, "0")}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Sin facturar
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">

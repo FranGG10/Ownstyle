@@ -19,6 +19,9 @@ yarn-error.log*
 # env files
 .env*
 
+# certificados/claves privadas (ARCA WSFE, etc.) - nunca deben subirse al repo
+/certs/
+
 # vercel
 .vercel
 

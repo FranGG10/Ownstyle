@@ -9,9 +9,13 @@ async function getVenta(id: string) {
 
   try {
     const [venta] = await sql`
-      SELECT m.*, c.razon_social as cliente_nombre, c.cuit as cliente_cuit
+      SELECT m.*, c.razon_social as cliente_nombre, c.cuit as cliente_cuit,
+        f.punto_venta as factura_punto_venta, f.numero_comprobante as factura_numero,
+        f.cae as factura_cae, f.cae_vencimiento as factura_cae_vencimiento,
+        f.tipo_comprobante as factura_tipo_comprobante
       FROM movimientos m
       LEFT JOIN clientes c ON m.id_cliente = c.id_cliente
+      LEFT JOIN facturas f ON f.id_movimiento = m.id_movimiento
       WHERE m.id_movimiento = ${numericId} AND m.tipo = 'venta'
     `
 

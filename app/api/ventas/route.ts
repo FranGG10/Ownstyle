@@ -8,9 +8,12 @@ export async function GET(request: NextRequest) {
 
   try {
     let ventasQuery = `
-      SELECT m.*, c.razon_social as cliente_nombre, m.nombre_cliente, m.barrio, m.medio_pago
+      SELECT m.*, c.razon_social as cliente_nombre, m.nombre_cliente, m.barrio, m.medio_pago,
+        f.punto_venta as factura_punto_venta, f.numero_comprobante as factura_numero, f.cae as factura_cae,
+        f.tipo_comprobante as factura_tipo_comprobante
       FROM movimientos m
       LEFT JOIN clientes c ON m.id_cliente = c.id_cliente
+      LEFT JOIN facturas f ON f.id_movimiento = m.id_movimiento
       WHERE m.tipo = 'venta'
     `
 

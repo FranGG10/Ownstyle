@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { FileText, TrendingUp, TrendingDown, DollarSign, Package, Search, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { FileText, TrendingUp, TrendingDown, DollarSign, Package, Search, ArrowUpRight, ArrowDownRight, Receipt } from "lucide-react"
 import useSWR from "swr"
+import Link from "next/link"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -34,6 +35,9 @@ export default function InformesClient() {
   const [fechaDesdeFlow, setFechaDesdeFlow] = useState(firstDayOfMonth.toISOString().split("T")[0])
   const [fechaHastaFlow, setFechaHastaFlow] = useState(today.toISOString().split("T")[0])
 
+  const [fechaDesdeFact, setFechaDesdeFact] = useState(firstDayOfMonth.toISOString().split("T")[0])
+  const [fechaHastaFact, setFechaHastaFact] = useState(today.toISOString().split("T")[0])
+
   const { data: proveedoresData, isLoading: loadingProveedores } = useSWR(
     `/api/informes/proveedores?desde=${fechaDesde}&hasta=${fechaHasta}`,
     fetcher
@@ -41,6 +45,11 @@ export default function InformesClient() {
 
   const { data: flujoData, isLoading: loadingFlujo } = useSWR(
     `/api/informes/flujo-efectivo?desde=${fechaDesdeFlow}&hasta=${fechaHastaFlow}`,
+    fetcher
+  )
+
+  const { data: facturacionData, isLoading: loadingFacturacion } = useSWR(
+    `/api/informes/facturacion?desde=${fechaDesdeFact}&hasta=${fechaHastaFact}`,
     fetcher
   )
 
@@ -63,6 +72,10 @@ export default function InformesClient() {
           <TabsTrigger value="flujo" className="gap-2">
             <DollarSign className="h-4 w-4" />
             Flujo de Efectivo
+          </TabsTrigger>
+          <TabsTrigger value="facturacion" className="gap-2">
+            <Receipt className="h-4 w-4" />
+            Facturación
           </TabsTrigger>
         </TabsList>
 
@@ -287,6 +300,120 @@ export default function InformesClient() {
               ) : (
                 <div className="py-8 text-center text-muted-foreground">
                   No hay datos disponibles
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Facturación */}
+        <TabsContent value="facturacion" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Ventas Facturadas</CardTitle>
+              <CardDescription>Listado de ventas con Factura electrónica emitida (CAE)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="space-y-2">
+                  <Label>Desde</Label>
+                  <Input
+                    type="date"
+                    value={fechaDesdeFact}
+                    onChange={(e) => setFechaDesdeFact(e.target.value)}
+                    className="w-40"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Hasta</Label>
+                  <Input
+                    type="date"
+                    value={fechaHastaFact}
+                    onChange={(e) => setFechaHastaFact(e.target.value)}
+                    className="w-40"
+                  />
+                </div>
+              </div>
+
+              {loadingFacturacion ? (
+                <div className="py-8 text-center text-muted-foreground">Cargando...</div>
+              ) : facturacionData?.facturas?.length > 0 ? (
+                <>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Cliente</TableHead>
+                          <TableHead>Comprobante</TableHead>
+                          <TableHead>CAE</TableHead>
+                          <TableHead>Vto. CAE</TableHead>
+                          <TableHead className="text-right">Neto</TableHead>
+                          <TableHead className="text-right">IVA</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead className="text-right">Venta</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {facturacionData.facturas.map((f: any) => (
+                          <TableRow key={f.id_factura}>
+                            <TableCell>{formatDate(f.fecha)}</TableCell>
+                            <TableCell className="font-medium">{f.cliente_nombre}</TableCell>
+                            <TableCell>
+                              {f.tipo_comprobante_nombre} Nº {String(f.punto_venta).padStart(4, "0")}-
+                              {String(f.numero_comprobante).padStart(8, "0")}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{f.cae}</TableCell>
+                            <TableCell>{formatDate(f.cae_vencimiento)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(Number(f.imp_neto))}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(Number(f.imp_iva))}</TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {formatCurrency(Number(f.importe_total))}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Link
+                                href={`/ventas/detalle/${f.id_movimiento}`}
+                                className="text-primary hover:underline text-sm"
+                              >
+                                Ver venta
+                              </Link>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t">
+                    <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+                      <CardContent className="pt-4">
+                        <div className="text-sm text-blue-600 dark:text-blue-400">Facturas Emitidas</div>
+                        <div className="text-2xl font-bold">{facturacionData.totales.cantidad}</div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+                      <CardContent className="pt-4">
+                        <div className="text-sm text-green-600 dark:text-green-400">Total Neto</div>
+                        <div className="text-2xl font-bold">{formatCurrency(Number(facturacionData.totales.total_neto))}</div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800">
+                      <CardContent className="pt-4">
+                        <div className="text-sm text-orange-600 dark:text-orange-400">Total IVA</div>
+                        <div className="text-2xl font-bold">{formatCurrency(Number(facturacionData.totales.total_iva))}</div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800">
+                      <CardContent className="pt-4">
+                        <div className="text-sm text-purple-600 dark:text-purple-400">Total Facturado</div>
+                        <div className="text-2xl font-bold">{formatCurrency(Number(facturacionData.totales.total_general))}</div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              ) : (
+                <div className="py-8 text-center text-muted-foreground">
+                  No hay ventas facturadas en el periodo seleccionado
                 </div>
               )}
             </CardContent>

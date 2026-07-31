@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Settings, Save } from "lucide-react"
 import { updateConfiguracion } from "@/app/actions/configuracion"
 
@@ -81,6 +82,24 @@ export function ConfiguracionGeneral({ configuraciones }: ConfiguracionGeneralPr
                 placeholder="20-12345678-9"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="empresa_condicion_iva">Condición frente al IVA</Label>
+              <Select
+                value={values.empresa_condicion_iva || "Monotributo"}
+                onValueChange={(value) => handleChange("empresa_condicion_iva", value)}
+              >
+                <SelectTrigger id="empresa_condicion_iva">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Monotributo">Monotributo</SelectItem>
+                  <SelectItem value="Responsable Inscripto">Responsable Inscripto</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Determina si al facturar se emite Factura C (Monotributo) o A/B (Responsable Inscripto).
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -111,6 +130,18 @@ export function ConfiguracionGeneral({ configuraciones }: ConfiguracionGeneralPr
                 value={values.iva_tasa || "21"}
                 onChange={(e) => handleChange("iva_tasa", e.target.value)}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="umbral_consumidor_final">Umbral para exigir CUIT/DNI en factura ($)</Label>
+              <Input
+                id="umbral_consumidor_final"
+                type="number"
+                value={values.umbral_consumidor_final || "1000000"}
+                onChange={(e) => handleChange("umbral_consumidor_final", e.target.value)}
+              />
+              <p className="text-sm text-muted-foreground">
+                Ventas por debajo de este monto se pueden facturar a Consumidor Final sin identificar.
+              </p>
             </div>
           </div>
         </CardContent>

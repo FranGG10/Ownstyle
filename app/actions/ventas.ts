@@ -176,6 +176,19 @@ async function createAsientoVenta(idMovimiento: number, data: VentaData, numeroC
 
 export async function deleteVenta(idMovimiento: number) {
   try {
+    // 0. No se puede eliminar una venta que ya tiene una Factura C emitida en
+    // ARCA: el CAE queda válido allá para siempre, borrar el registro acá
+    // dejaría el sistema desincronizado con lo que ARCA ya autorizó.
+    const [factura] = await sql`
+      SELECT numero_comprobante, cae FROM facturas WHERE id_movimiento = ${idMovimiento}
+    `
+    if (factura) {
+      return {
+        success: false,
+        error: `No se puede eliminar: esta venta ya tiene la Factura C Nº ${factura.numero_comprobante} emitida en ARCA (CAE ${factura.cae}).`,
+      }
+    }
+
     // 1. Get movement details to restore stock
     const detalles = await sql`
       SELECT md.id_producto, md.cantidad, p.stock_actual, p.categoria

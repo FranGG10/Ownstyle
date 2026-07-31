@@ -171,7 +171,7 @@ export function VentasClient() {
           <CardContent className="p-8 text-center text-muted-foreground">Cargando ventas...</CardContent>
         </Card>
       ) : (
-        <VentasTable ventas={ventas} />
+        <VentasTable ventas={ventas} onFacturado={() => mutate()} />
       )}
     </div>
   )

@@ -1,12 +1,14 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format"
-import { ArrowLeft, FileText, BookOpen } from "lucide-react"
+import { ArrowLeft, FileText, BookOpen, Receipt, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { facturarVenta } from "@/app/actions/facturacion"
 
 interface VentaDetailProps {
   venta: {
@@ -21,6 +23,11 @@ interface VentaDetailProps {
     estado: string
     observaciones: string
     created_at: string
+    factura_punto_venta: number | null
+    factura_numero: number | null
+    factura_cae: string | null
+    factura_cae_vencimiento: string | null
+    factura_tipo_comprobante: number | null
     detalles: {
       id_detalle: number
       codigo_sku: string
@@ -43,7 +50,54 @@ interface VentaDetailProps {
   }
 }
 
+const NOMBRE_COMPROBANTE: Record<number, string> = {
+  1: "Factura A",
+  6: "Factura B",
+  11: "Factura C",
+}
+
 export function VentaDetail({ venta }: VentaDetailProps) {
+  const [facturando, setFacturando] = useState(false)
+  const [facturaEmitida, setFacturaEmitida] = useState<{
+    puntoVenta: number
+    numero: number
+    cae: string
+    vencimiento: string
+    tipoComprobante: number
+  } | null>(
+    venta.factura_numero
+      ? {
+          puntoVenta: venta.factura_punto_venta!,
+          numero: venta.factura_numero,
+          cae: venta.factura_cae!,
+          vencimiento: venta.factura_cae_vencimiento!,
+          tipoComprobante: venta.factura_tipo_comprobante || 11,
+        }
+      : null,
+  )
+
+  const handleFacturar = async () => {
+    setFacturando(true)
+    try {
+      const resultado = await facturarVenta(venta.id_movimiento)
+      if (resultado.success) {
+        setFacturaEmitida({
+          puntoVenta: resultado.puntoVenta!,
+          numero: resultado.numero!,
+          cae: resultado.cae!,
+          vencimiento: resultado.vencimiento!,
+          tipoComprobante: resultado.tipoComprobante || 11,
+        })
+      } else {
+        alert(resultado.error || "Error al facturar la venta")
+      }
+    } catch (error) {
+      alert("Error inesperado al facturar la venta")
+    } finally {
+      setFacturando(false)
+    }
+  }
+
   const getStatusBadge = (estado: string) => {
     const variants: Record<string, { label: string; className: string }> = {
       completado: { label: "Completado", className: "bg-success/10 text-success border-success/20" },
@@ -183,6 +237,50 @@ export function VentaDetail({ venta }: VentaDetailProps) {
               </TableBody>
             </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Facturación ARCA */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5" />
+            {facturaEmitida ? NOMBRE_COMPROBANTE[facturaEmitida.tipoComprobante] || "Factura" : "Factura"} (ARCA)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {facturaEmitida ? (
+            <div className="grid gap-4 md:grid-cols-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Punto de Venta</p>
+                <p className="font-mono font-medium">{String(facturaEmitida.puntoVenta).padStart(4, "0")}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Número</p>
+                <p className="font-mono font-medium">{String(facturaEmitida.numero).padStart(8, "0")}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">CAE</p>
+                <p className="font-mono font-medium">{facturaEmitida.cae}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Vencimiento CAE</p>
+                <p className="font-medium">{formatDate(facturaEmitida.vencimiento)}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Esta venta todavía no tiene una factura emitida.</p>
+              <Button onClick={handleFacturar} disabled={facturando || venta.estado !== "completado"}>
+                {facturando ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Receipt className="h-4 w-4 mr-2" />
+                )}
+                Facturar
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
