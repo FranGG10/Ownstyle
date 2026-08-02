@@ -21,7 +21,7 @@ export interface EntradaDiccionario {
 
 export interface ProductoResuelto {
   fraseOriginal: string
-  talle: number | null
+  talle: string | null // numérico ("38") o de ropa ("M", "XL")
   sku: string | null
   id_producto: number | null
   nombre: string | null
@@ -132,9 +132,13 @@ function buscarEnDiccionario(fraseOriginal: string, diccionario: EntradaDicciona
 
 interface ItemLinea {
   frase: string
-  talles: number[]
+  talles: string[]
   cantidadPorTalle: number
 }
+
+// Talles de ropa (Baggy, Joggin, Buzo): no son numéricos como el calzado.
+const TALLES_ROPA = ["XXXL", "XXL", "XL", "L", "M", "S", "XS"]
+const TALLE_ROPA_REGEX = new RegExp(`\\b(${TALLES_ROPA.join("|")})\\s*$`, "i")
 
 function parseProductoLinea(lineaOriginal: string): ItemLinea {
   let linea = lineaOriginal.trim()
@@ -149,23 +153,29 @@ function parseProductoLinea(lineaOriginal: string): ItemLinea {
   // Palabras de relleno antes de un número final ("la misma en 40" -> "la misma 40")
   linea = linea.replace(/\ben\s+(\d)/i, "$1")
 
-  let talles: number[] = []
+  let talles: string[] = []
   let frase = linea
 
   const rangoMatch = linea.match(/(\d{2,3}(?:\s*-\s*\d{2,3})+)\s*$/)
+  const talleRopaMatch = linea.match(TALLE_ROPA_REGEX)
+
   if (rangoMatch && rangoMatch.index !== undefined) {
     const numeros = rangoMatch[1].split("-").map((n) => Number.parseInt(n.trim(), 10))
     frase = linea.slice(0, rangoMatch.index).trim()
     if (numeros.length === 2 && numeros[1] > numeros[0] && numeros[1] - numeros[0] <= 15) {
-      for (let t = numeros[0]; t <= numeros[1]; t++) talles.push(t)
+      for (let t = numeros[0]; t <= numeros[1]; t++) talles.push(String(t))
     } else {
-      talles = numeros
+      talles = numeros.map(String)
     }
   } else {
     const talleMatch = linea.match(/(\d{2,3})\s*$/)
     if (talleMatch && talleMatch.index !== undefined) {
-      talles = [Number.parseInt(talleMatch[1], 10)]
+      talles = [talleMatch[1]]
       frase = linea.slice(0, talleMatch.index).trim()
+    } else if (talleRopaMatch && talleRopaMatch.index !== undefined) {
+      // Talle de ropa (M, L, XL, XXL...) en vez de un número.
+      talles = [talleRopaMatch[1].toUpperCase()]
+      frase = linea.slice(0, talleRopaMatch.index).trim()
     }
   }
 
@@ -178,10 +188,24 @@ function parsearMonto(raw: string): number {
   return Number.parseInt(raw.replace(/\./g, "").replace(",", "").trim(), 10) || 0
 }
 
+// Los mensajes a veces se pegan tal cual salen de un export de WhatsApp:
+// "[11:17 a. m., 28/7/2026] Emi Cliente: COMPRA ROBIN". Si una línea tiene
+// ese formato, se saca el encabezado y se usa la fecha real del mensaje en
+// vez de la fecha elegida a mano en el formulario.
+function extraerFechaWhatsapp(lineaOriginal: string): { fecha: string | null; contenido: string } {
+  const match = lineaOriginal.match(/^\[([^\]]+)\]\s*[^:]*:\s*(.*)$/)
+  if (!match) return { fecha: null, contenido: lineaOriginal }
+
+  const fechaMatch = match[1].match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  const fecha = fechaMatch ? `${fechaMatch[3]}-${fechaMatch[2].padStart(2, "0")}-${fechaMatch[1].padStart(2, "0")}` : null
+
+  return { fecha, contenido: match[2].trim() }
+}
+
 // ---------- Resolución de un ítem contra Diccionario + catálogo real ----------
 
 function resolverProducto(
-  item: { frase: string; talle: number | null },
+  item: { frase: string; talle: string | null },
   diccionario: EntradaDiccionario[],
   productosPorSku: Map<string, { id_producto: number; nombre: string; costo: number }>,
   cantidad: number,
@@ -219,13 +243,13 @@ function resolverProducto(
 
   let skuFinal: string
   if (entrada.sku_base.includes("XX")) {
-    skuFinal = entrada.sku_base.replace("XX", String(item.talle))
+    skuFinal = entrada.sku_base.replace("XX", item.talle)
   } else {
     // Talle ya fijo en el Diccionario (ej. JORDAN-BLANCA-41): si el mensaje
     // pide un talle distinto, no coincide con lo que el Diccionario sabe -
     // se marca para revisar en vez de asumir.
     const talleFijo = entrada.sku_base.match(/(\d{2,3})$/)?.[1]
-    if (talleFijo && Number(talleFijo) !== item.talle) {
+    if (talleFijo && talleFijo !== item.talle) {
       return {
         fraseOriginal: item.frase,
         talle: item.talle,
@@ -270,16 +294,17 @@ function resolverProducto(
 
 // ---------- Ventas + Cambios ----------
 
-type PedidoCrudoVenta = { tipo: "venta"; etiqueta: string; importe: number; lineasProducto: string[] }
+type PedidoCrudoVenta = { tipo: "venta"; etiqueta: string; importe: number; fecha: string; lineasProducto: string[] }
 type PedidoCrudoCambio = {
   tipo: "cambio"
   cliente: string
   importe: number
+  fecha: string
   paresLineas: { devuelve: string; entrega: string }[]
 }
 
-function segmentarVentas(texto: string): (PedidoCrudoVenta | PedidoCrudoCambio)[] {
-  const lineas = texto
+function segmentarVentas(texto: string, fechaDefault: string): (PedidoCrudoVenta | PedidoCrudoCambio)[] {
+  const lineasCrudas = texto
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
@@ -287,11 +312,17 @@ function segmentarVentas(texto: string): (PedidoCrudoVenta | PedidoCrudoCambio)[
   const pedidos: (PedidoCrudoVenta | PedidoCrudoCambio)[] = []
   let actual: PedidoCrudoVenta | PedidoCrudoCambio | null = null
   let devuelvePendiente: string[] | null = null
+  let fechaActual = fechaDefault
 
   const headerRegex = /^(.*?)\$\s*([\d.,]+)\s*$/
   const esCambio = (etiqueta: string) => /\(cambio\)/i.test(etiqueta)
 
-  for (const linea of lineas) {
+  for (const lineaCruda of lineasCrudas) {
+    const { fecha: fechaMsj, contenido } = extraerFechaWhatsapp(lineaCruda)
+    if (fechaMsj) fechaActual = fechaMsj
+    const linea = contenido.trim()
+    if (!linea) continue
+
     const headerMatch = linea.match(headerRegex)
     if (headerMatch) {
       const etiqueta = headerMatch[1].trim()
@@ -299,9 +330,9 @@ function segmentarVentas(texto: string): (PedidoCrudoVenta | PedidoCrudoCambio)[
 
       if (esCambio(etiqueta)) {
         const cliente = etiqueta.replace(/\(cambio\)/i, "").trim()
-        actual = { tipo: "cambio", cliente, importe, paresLineas: [] }
+        actual = { tipo: "cambio", cliente, importe, fecha: fechaActual, paresLineas: [] }
       } else {
-        actual = { tipo: "venta", etiqueta, importe, lineasProducto: [] }
+        actual = { tipo: "venta", etiqueta, importe, fecha: fechaActual, lineasProducto: [] }
       }
       pedidos.push(actual)
       devuelvePendiente = null
@@ -349,15 +380,25 @@ async function cargarDiccionarioYProductos() {
   return { diccionario, productosPorSku }
 }
 
-export async function interpretarVentas(texto: string, fecha: string): Promise<(PedidoVentaResuelto | PedidoCambioResuelto)[]> {
+export async function interpretarVentas(texto: string, fechaDefault: string): Promise<(PedidoVentaResuelto | PedidoCambioResuelto)[]> {
   const { diccionario, productosPorSku } = await cargarDiccionarioYProductos()
 
-  const fechaCompacta = fecha.replace(/-/g, "")
-  const crudos = segmentarVentas(texto)
+  const crudos = segmentarVentas(texto, fechaDefault)
   const resultado: (PedidoVentaResuelto | PedidoCambioResuelto)[] = []
+  const contadorPorFecha = new Map<string, number>()
 
-  crudos.forEach((pedido, index) => {
-    const numeroPedido = `${fechaCompacta}-${index + 1}`
+  // El número de pedido es correlativo por día (arranca en 1 cada fecha
+  // distinta que aparezca en el texto, ej. si hay timestamps de WhatsApp de
+  // más de un día en el mismo pegado).
+  const siguienteNumeroPedido = (fechaPedido: string) => {
+    const n = (contadorPorFecha.get(fechaPedido) || 0) + 1
+    contadorPorFecha.set(fechaPedido, n)
+    return `${fechaPedido.replace(/-/g, "")}-${n}`
+  }
+
+  crudos.forEach((pedido) => {
+    const numeroPedido = siguienteNumeroPedido(pedido.fecha)
+    const fecha = pedido.fecha
 
     if (pedido.tipo === "venta") {
       const productos = pedido.lineasProducto.map((linea) => {
@@ -366,7 +407,7 @@ export async function interpretarVentas(texto: string, fecha: string): Promise<(
         // generamos una línea resuelta por unidad, igual que especifica el
         // prompt original.
         const items: ProductoResuelto[] = []
-        const talles = parsed.talles.length > 0 ? parsed.talles : [null as unknown as number]
+        const talles: (string | null)[] = parsed.talles.length > 0 ? parsed.talles : [null]
         for (const talle of talles) {
           for (let i = 0; i < parsed.cantidadPorTalle; i++) {
             items.push(resolverProducto({ frase: parsed.frase, talle }, diccionario, productosPorSku, 1))
@@ -440,123 +481,162 @@ export async function interpretarVentas(texto: string, fecha: string): Promise<(
 }
 
 // ---------- Compras ----------
-// Formato (Prompt 2): bloques por proveedor. Una línea que NO tiene forma de
-// "producto + talle/cantidad" se interpreta como encabezado de proveedor
-// (quita un "COMPRA" inicial si aparece). Si un bloque no tiene proveedor
-// propio, hereda el del bloque anterior. Nota: a diferencia de ventas, este
-// formato todavía no se probó contra un mensaje real de compra - conviene
-// probarlo con un caso real antes de confiar en la interpretación al 100%.
+// Se vieron 3 formatos reales distintos y el parser soporta los 3:
+//   1) "COMPRA MAGDA" + "MQ BCO 40 40" + "MQ NE 41(x3)" (frase y talles en
+//      la misma línea, con o sin "(xN)"/"xN").
+//   2) Export de WhatsApp con timestamp: "[11:17 a. m., 28/7/2026] Emi
+//      Cliente: JORDAN BOTA" (encabezado de modelo, SIN talles) seguido de
+//      líneas que son solo números repetidos ("36 36 36", "43 43 43 43 43
+//      43 43") - esos talles pertenecen al último modelo nombrado. La fecha
+//      real del mensaje reemplaza a la fecha elegida a mano si está presente.
+//   3) "Campus blancas: 35 (x2), 36 (x3), ..., 45" (modelo + ":" + lista de
+//      talles separados por coma, cada uno con "(xN)" opcional - sin
+//      multiplicador cuenta como 1).
+// En los 3 casos, el proveedor se identifica solo con una línea que empiece
+// con la palabra "compra" (ej. "COMPRA ROBIN", "Compra Carla") - cualquier
+// otra línea sin talles es un encabezado de modelo, no un proveedor nuevo.
 
-function pareceLineaDeProducto(linea: string): boolean {
-  return /\d/.test(linea)
+// Extrae talle+cantidad de una lista tipo "35 (x2), 36 (x3), 45" o de talles
+// sueltos repetidos "36 36 36" (sin "(xN)" cuenta 1 por aparición).
+function extraerTallesConCantidad(texto: string): { talle: number; cantidad: number }[] {
+  const limpio = texto.replace(/,/g, " ")
+  const regex = /(\d{2,3})\s*(?:\(?\s*x\s*(\d+)\s*\)?)?/gi
+  const resultado: { talle: number; cantidad: number }[] = []
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(limpio)) !== null) {
+    resultado.push({ talle: Number.parseInt(match[1], 10), cantidad: match[2] ? Number.parseInt(match[2], 10) : 1 })
+  }
+  return resultado
 }
 
-// Parseo de una línea de compra: a diferencia de ventas, acá los números
-// repetidos al final ("40 40", "43 43 43 43") suman unidades del mismo
-// talle, no son un rango. También soporta "(x3)"/"x3" y "40: 3 pares".
+// Parsea una línea de compra. Devuelve `frase` vacía cuando la línea es solo
+// talles (formato 2, hereda el modelo de la línea anterior en el llamador).
 function parseLineaCompra(lineaOriginal: string): { frase: string; talleCantidades: { talle: number; cantidad: number }[] } {
-  let linea = lineaOriginal.trim()
+  const linea = lineaOriginal.trim()
 
-  let cantidadForzada: number | null = null
-  const paresMatch = linea.match(/:?\s*(\d+)\s*pares?\s*$/i)
-  if (paresMatch && paresMatch.index !== undefined) {
-    cantidadForzada = Number.parseInt(paresMatch[1], 10)
-    linea = linea.slice(0, paresMatch.index).trim()
-  }
+  const colonIndex = linea.indexOf(":")
+  if (colonIndex !== -1) {
+    const antes = linea.slice(0, colonIndex).trim()
+    const despues = linea.slice(colonIndex + 1).trim()
 
-  let multiplicador = 1
-  const multMatch = linea.match(/\(?\s*x\s*(\d+)\s*\)?\s*$/i)
-  if (multMatch && multMatch.index !== undefined) {
-    multiplicador = Number.parseInt(multMatch[1], 10)
-    linea = linea.slice(0, multMatch.index).trim()
-  }
-
-  const numerosMatch = linea.match(/((?:\d{2,3}\s*)+)$/)
-  const talleCantidades: { talle: number; cantidad: number }[] = []
-  let frase = linea
-
-  if (numerosMatch && numerosMatch.index !== undefined) {
-    frase = linea.slice(0, numerosMatch.index).trim()
-    const numeros = numerosMatch[1]
-      .trim()
-      .split(/\s+/)
-      .map((n) => Number.parseInt(n, 10))
-    const conteo = new Map<number, number>()
-    for (const n of numeros) conteo.set(n, (conteo.get(n) || 0) + 1)
-    for (const [talle, ocurrencias] of conteo) {
-      talleCantidades.push({ talle, cantidad: ocurrencias * multiplicador * (cantidadForzada || 1) })
+    if (/^\d{2,3}$/.test(antes)) {
+      // "40: 3 pares" - lo de antes del ":" es el talle, no un producto
+      const cantidadMatch = despues.match(/(\d+)/)
+      const cantidad = cantidadMatch ? Number.parseInt(cantidadMatch[1], 10) : 1
+      return { frase: "", talleCantidades: [{ talle: Number.parseInt(antes, 10), cantidad }] }
     }
+
+    // "Campus blancas: 35 (x2), 36 (x3), ..." - modelo + lista de talles
+    return { frase: antes, talleCantidades: extraerTallesConCantidad(despues) }
   }
 
-  frase = frase.replace(/[/,;:.\-]+$/, "").trim()
+  // Sin ":". Separar la frase de la "cola" de números al final de la línea
+  // (soporta "MQ BCO 40 40", "MQ NE 41(x3)", o una línea que es solo
+  // talles "36 36 36" -> frase queda vacía).
+  const numerosMatch = linea.match(/((?:\d{2,3}\s*(?:\(?\s*x\s*\d+\s*\)?)?[\s,]*)+)$/i)
+  if (!numerosMatch || numerosMatch.index === undefined) {
+    return { frase: linea, talleCantidades: [] }
+  }
 
-  return { frase, talleCantidades }
+  const frase = linea
+    .slice(0, numerosMatch.index)
+    .trim()
+    .replace(/[/,;:.\-]+$/, "")
+    .trim()
+
+  return { frase, talleCantidades: extraerTallesConCantidad(numerosMatch[1]) }
 }
 
-export async function interpretarCompras(texto: string, fecha: string): Promise<PedidoCompraResuelto[]> {
+export async function interpretarCompras(texto: string, fechaDefault: string): Promise<PedidoCompraResuelto[]> {
   const { diccionario, productosPorSku } = await cargarDiccionarioYProductos()
 
-  const lineas = texto
+  const lineasCrudas = texto
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
 
-  const bloques: { proveedor: string; lineas: string[] }[] = []
-  let proveedorActual = ""
+  interface Bloque {
+    proveedor: string
+    fecha: string
+    acumulado: Map<string, { frase: string; talle: number; cantidad: number }>
+    lineasSinTalle: string[]
+  }
 
-  for (const linea of lineas) {
-    if (!pareceLineaDeProducto(linea)) {
-      proveedorActual = linea.replace(/^compra\s+/i, "").trim()
-      bloques.push({ proveedor: proveedorActual, lineas: [] })
+  const bloques: Bloque[] = []
+  let bloqueActual: Bloque | null = null
+  let modeloActual = ""
+  let fechaActual = fechaDefault
+
+  const nuevoBloque = (proveedor: string): Bloque => {
+    const b: Bloque = { proveedor, fecha: fechaActual, acumulado: new Map(), lineasSinTalle: [] }
+    bloques.push(b)
+    return b
+  }
+
+  for (const lineaCruda of lineasCrudas) {
+    const { fecha: fechaMsj, contenido } = extraerFechaWhatsapp(lineaCruda)
+    if (fechaMsj) fechaActual = fechaMsj
+    const linea = contenido.trim()
+    if (!linea) continue
+
+    const proveedorMatch = linea.match(/^compra\s+(.+)$/i)
+    if (proveedorMatch) {
+      bloqueActual = nuevoBloque(proveedorMatch[1].trim())
+      modeloActual = ""
+      continue
+    }
+
+    if (!bloqueActual) bloqueActual = nuevoBloque("")
+
+    const { frase, talleCantidades } = parseLineaCompra(linea)
+
+    if (talleCantidades.length > 0) {
+      const fraseFinal = frase || modeloActual
+      if (!fraseFinal) {
+        bloqueActual.lineasSinTalle.push(`Talles sin producto: "${linea}"`)
+        continue
+      }
+      for (const { talle, cantidad } of talleCantidades) {
+        const clave = `${normalizar(fraseFinal)}|${talle}`
+        const previo = bloqueActual.acumulado.get(clave)
+        bloqueActual.acumulado.set(clave, { frase: fraseFinal, talle, cantidad: (previo?.cantidad || 0) + cantidad })
+      }
+      continue
+    }
+
+    if (!/\d/.test(linea)) {
+      // Línea de puro texto: nombre de modelo, los talles vienen en las
+      // líneas siguientes.
+      modeloActual = linea
     } else {
-      if (bloques.length === 0) bloques.push({ proveedor: proveedorActual, lineas: [] })
-      bloques[bloques.length - 1].lineas.push(linea)
+      bloqueActual.lineasSinTalle.push(`No se pudo interpretar la línea: "${linea}"`)
     }
   }
 
-  const fechaCompacta = fecha.replace(/-/g, "")
+  const contadorPorFecha = new Map<string, number>()
+  const siguienteNumeroPedido = (fechaPedido: string) => {
+    const n = (contadorPorFecha.get(fechaPedido) || 0) + 1
+    contadorPorFecha.set(fechaPedido, n)
+    return `${fechaPedido.replace(/-/g, "")}-${n}`
+  }
 
   return bloques
-    .filter((b) => b.lineas.length > 0)
-    .map((bloque, index) => {
-      // Sumar cantidades por SKU final (frase+talle), tolerando "40 40",
-      // "40(x3)", "40: 3 pares" y talles repetidos entre líneas.
-      const acumulado = new Map<string, { frase: string; talle: number; cantidad: number }>()
-      const lineasSinTalle: string[] = []
-
-      for (const linea of bloque.lineas) {
-        const { frase, talleCantidades } = parseLineaCompra(linea)
-
-        if (talleCantidades.length === 0) {
-          lineasSinTalle.push(linea)
-          continue
-        }
-
-        for (const { talle, cantidad } of talleCantidades) {
-          const clave = `${normalizar(frase)}|${talle}`
-          const previo = acumulado.get(clave)
-          acumulado.set(clave, {
-            frase,
-            talle,
-            cantidad: (previo?.cantidad || 0) + cantidad,
-          })
-        }
-      }
-
-      const productos = Array.from(acumulado.values()).map(({ frase, talle, cantidad }) =>
-        resolverProducto({ frase, talle }, diccionario, productosPorSku, cantidad),
+    .filter((b) => b.acumulado.size > 0 || b.lineasSinTalle.length > 0)
+    .map((bloque) => {
+      const productos = Array.from(bloque.acumulado.values()).map(({ frase, talle, cantidad }) =>
+        resolverProducto({ frase, talle: String(talle) }, diccionario, productosPorSku, cantidad),
       )
 
       const errores = [
         ...productos.filter((p) => !p.encontrado).map((p) => p.motivoError || `Error en ${p.fraseOriginal}`),
-        ...lineasSinTalle.map((l) => `No se pudo identificar el talle en la línea: "${l}"`),
+        ...bloque.lineasSinTalle,
       ]
       if (!bloque.proveedor) errores.push("Falta el proveedor")
       if (productos.length === 0) errores.push("El pedido no tiene productos")
 
       return {
-        numeroPedido: `${fechaCompacta}-${index + 1}`,
-        fecha,
+        numeroPedido: siguienteNumeroPedido(bloque.fecha),
+        fecha: bloque.fecha,
         proveedor: bloque.proveedor,
         medioPago: "efectivo",
         productos,

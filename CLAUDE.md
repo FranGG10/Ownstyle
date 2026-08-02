@@ -203,12 +203,24 @@ Los pedidos tipo `cambio` que salen de "Pegar texto" en ventas se mandan a
 entrega/devuelve por cambio — caso real: un cambio con dos productos
 distintos devueltos y entregados a la vez).
 
-Probado exhaustivamente contra un mensaje real de ventas+cambios (Francisco
-lo compartió) con 100% de aciertos, incluyendo los casos más difíciles
-(cambio con dos pares, "la misma" resuelto al modelo devuelto, typos y
-códigos sin prefijo). El lado de compras se armó siguiendo la misma
-especificación pero **todavía no se probó con un mensaje de compra real** —
-conviene revisar la primera vez que se use con datos reales.
+Probado exhaustivamente contra mensajes reales de Francisco, con 100% de
+aciertos (verificado con scripts ad-hoc, sin pasar por el navegador):
+- Ventas+cambios: cambio con dos pares (dos productos devueltos/entregados a
+  la vez), "la misma" resuelto al modelo devuelto, typos ("AIRFROCE", "MA
+  BCO") y códigos sin prefijo de línea ("BB" → "MQ BB").
+- Compras: se vieron y soportan **3 formatos distintos** de mensaje real:
+  1. `COMPRA <proveedor>` + `<frase> <talles>` en la misma línea (con o sin
+     "(xN)"/"xN"), ej. `MQ BCO 40 40`.
+  2. Export de WhatsApp con timestamp `[HH:MM a./p. m., D/M/AAAA] Remitente:
+     <texto>` - el parser saca ese encabezado y usa la fecha real del
+     mensaje en vez de la elegida a mano. En este formato el nombre del
+     modelo va en su propia línea (sin talles) y las líneas siguientes son
+     solo talles repetidos (ej. `36 36 36`), que se acumulan al modelo
+     nombrado más arriba.
+  3. `<frase>: 35 (x2), 36 (x3), ..., 45` (talles separados por coma en una
+     sola línea, cada uno con multiplicador opcional - sin "(xN)" cuenta 1).
+  El número de pedido es correlativo por fecha (si en un mismo pegado hay
+  mensajes de más de un día, la numeración arranca de nuevo en cada día).
 
 ## Cómo levantar el proyecto
 
