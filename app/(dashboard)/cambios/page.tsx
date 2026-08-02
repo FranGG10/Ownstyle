@@ -5,7 +5,7 @@ import { CambiosTable } from "@/components/cambios/cambios-table"
 import { CambiosStats } from "@/components/cambios/cambios-stats"
 import { sql } from "@/lib/db"
 import { Button } from "@/components/ui/button"
-import { Plus } from "lucide-react"
+import { Plus, Upload } from "lucide-react"
 import Link from "next/link"
 
 async function getCambiosData() {
@@ -81,12 +81,20 @@ export default async function CambiosPage() {
               Registra cambios de productos. El stock se descuenta al crear y se repone al completar.
             </p>
           </div>
-          <Link href="/cambios/nuevo">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo Cambio
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/cambios/carga-masiva">
+              <Button variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                Carga Masiva
+              </Button>
+            </Link>
+            <Link href="/cambios/nuevo">
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuevo Cambio
+              </Button>
+            </Link>
+          </div>
         </div>
 
         <CambiosStats stats={stats} />
