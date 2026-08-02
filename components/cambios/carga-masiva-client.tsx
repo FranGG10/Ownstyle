@@ -192,8 +192,12 @@ export function CambiosCargaMasivaClient() {
                 nombreCliente: cambio.cliente,
                 telefono: cambio.telefono,
                 motivo: cambio.motivo,
-                idProductoEntregado: cambio.productoEntregado.id_producto,
-                idProductoRecibido: cambio.productoDevuelto.id_producto,
+                pares: [
+                  {
+                    idProductoEntregado: cambio.productoEntregado.id_producto,
+                    idProductoRecibido: cambio.productoDevuelto.id_producto,
+                  },
+                ],
               }),
             })
 

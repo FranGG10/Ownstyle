@@ -17,6 +17,8 @@ import {
   Pencil,
   Trash2,
   Save,
+  ClipboardPaste,
+  Repeat,
 } from "lucide-react"
 import Link from "next/link"
 import { useDropzone } from "react-dropzone"
@@ -44,10 +46,20 @@ interface ProductoEncontrado {
   encontrado: boolean
 }
 
+interface ParCambioUI {
+  entregado: ProductoEncontrado
+  recibido: ProductoEncontrado
+}
+
 interface PedidoProcesado extends PedidoExcel {
   productos: ProductoEncontrado[]
   valid: boolean
   errores: string[]
+  // Solo presentes cuando el pedido viene del modo "Pegar texto" y es un
+  // cambio (detectado por "(cambio)" + "Devuelve/Le enviamos" en el texto).
+  tipo?: "venta" | "cambio"
+  motivoCambio?: string
+  pares?: ParCambioUI[]
 }
 
 export function CargaMasivaClient() {
@@ -64,6 +76,11 @@ export function CargaMasivaClient() {
 
   const [editandoIndex, setEditandoIndex] = useState<number | null>(null)
   const [pedidoEditado, setPedidoEditado] = useState<PedidoProcesado | null>(null)
+
+  const [modo, setModo] = useState<"excel" | "texto">("excel")
+  const [fechaTexto, setFechaTexto] = useState(new Date().toISOString().split("T")[0])
+  const [textoPegado, setTextoPegado] = useState("")
+  const [procesandoTexto, setProcesandoTexto] = useState(false)
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -237,6 +254,77 @@ export function CargaMasivaClient() {
     }
   }
 
+  const procesarTexto = async () => {
+    if (!textoPegado.trim()) return
+
+    setProcesandoTexto(true)
+    try {
+      const response = await fetch("/api/interpretar-pedido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: "ventas", texto: textoPegado, fecha: fechaTexto }),
+      })
+      const data = await response.json()
+
+      if (data.error) {
+        alert("Error al interpretar el texto: " + data.error)
+        return
+      }
+
+      const mapProducto = (p: any): ProductoEncontrado => ({
+        sku: p.sku || p.fraseOriginal,
+        id_producto: p.id_producto || 0,
+        nombre: p.nombre || p.fraseOriginal,
+        costo: Number(p.costo) || 0,
+        encontrado: Boolean(p.encontrado),
+      })
+
+      const pedidosProcesados: PedidoProcesado[] = (data.pedidos || []).map((p: any) => {
+        const base = {
+          fecha: p.fecha,
+          numeroPedido: p.numeroPedido,
+          nombre: p.cliente,
+          telefono: "",
+          barrio: p.cliente,
+          direccion: "",
+          skus: [],
+          monto: p.importe,
+          valid: p.errores.length === 0,
+          errores: p.errores as string[],
+        }
+
+        if (p.tipo === "cambio") {
+          const pares: ParCambioUI[] = p.pares.map((par: any) => ({
+            entregado: mapProducto(par.entregado),
+            recibido: mapProducto(par.recibido),
+          }))
+          return {
+            ...base,
+            medioPago: "efectivo",
+            productos: [],
+            tipo: "cambio" as const,
+            motivoCambio: p.motivo,
+            pares,
+          }
+        }
+
+        return {
+          ...base,
+          medioPago: p.medioPago || "efectivo",
+          productos: (p.productos || []).map(mapProducto),
+          tipo: "venta" as const,
+        }
+      })
+
+      setPedidos(pedidosProcesados)
+    } catch (error: any) {
+      console.error("Error procesando texto:", error)
+      alert("Error al interpretar el texto: " + error.message)
+    } finally {
+      setProcesandoTexto(false)
+    }
+  }
+
   const cargarVentas = async () => {
     const pedidosValidos = pedidos.filter((p) => p.valid)
     if (pedidosValidos.length === 0) {
@@ -268,6 +356,28 @@ export function CargaMasivaClient() {
 
         const resultados = await Promise.allSettled(
           lote.map(async (pedido) => {
+            // Los cambios (detectados por el modo "Pegar texto") van a su
+            // propio endpoint, no al de ventas.
+            if (pedido.tipo === "cambio" && pedido.pares) {
+              const response = await fetch("/api/cambios/carga-masiva", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  fecha: pedido.fecha,
+                  nombreCliente: pedido.nombre,
+                  telefono: pedido.telefono,
+                  motivo: pedido.motivoCambio || "Cambio",
+                  pares: pedido.pares.map((par) => ({
+                    idProductoEntregado: par.entregado.id_producto,
+                    idProductoRecibido: par.recibido.id_producto,
+                  })),
+                }),
+              })
+
+              const result = await response.json()
+              return { pedido, result }
+            }
+
             const response = await fetch("/api/ventas/carga-masiva", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -387,88 +497,144 @@ export function CargaMasivaClient() {
         </Link>
         <div>
           <h2 className="text-lg font-semibold">Carga Masiva de Ventas</h2>
-          <p className="text-sm text-muted-foreground">Importa múltiples ventas desde un archivo Excel</p>
+          <p className="text-sm text-muted-foreground">Importa múltiples ventas (y cambios) desde un Excel o pegando el texto</p>
         </div>
       </div>
 
-      {/* Instrucciones */}
-      <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-950/20">
-        <CardContent className="p-4">
-          <h3 className="font-medium text-blue-700 dark:text-blue-400 mb-2">Formato del archivo Excel</h3>
-          <p className="text-sm text-muted-foreground mb-2">
-            El archivo debe contener las siguientes columnas en orden:
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">A: Fecha</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">B: Nº Pedido</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">C: Nombre</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">D: Teléfono</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">E: Barrio</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">F: Dirección</span>
-            <span className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">G: Entre Calles</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">H: SKU</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">I: Monto</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">J: Forma Pago</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Zona de carga */}
       {!resultado && (
-        <Card>
-          <CardContent className="p-6">
-            <div
-              {...getRootProps()}
-              className={`
-                border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-                transition-colors duration-200
-                ${isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"}
-              `}
-            >
-              <input {...getInputProps()} />
-              <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              {archivo ? (
-                <div className="space-y-2">
-                  <p className="font-medium text-foreground">{archivo.name}</p>
-                  <p className="text-sm text-muted-foreground">{(archivo.size / 1024).toFixed(1)} KB</p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setArchivo(null)
-                      setPedidos([])
-                    }}
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Quitar archivo
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-muted-foreground">Arrastra tu archivo Excel aquí o haz clic para seleccionar</p>
-                  <p className="text-xs text-muted-foreground">Formatos soportados: .xlsx, .xls</p>
-                </div>
-              )}
-            </div>
+        <div className="flex items-center gap-2">
+          <Button variant={modo === "excel" ? "default" : "outline"} size="sm" onClick={() => setModo("excel")}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Excel
+          </Button>
+          <Button variant={modo === "texto" ? "default" : "outline"} size="sm" onClick={() => setModo("texto")}>
+            <ClipboardPaste className="h-4 w-4 mr-2" />
+            Pegar texto
+          </Button>
+        </div>
+      )}
 
-            {archivo && pedidos.length === 0 && (
-              <div className="mt-4 flex justify-center">
-                <Button onClick={procesarExcel} disabled={procesando}>
-                  {procesando ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Procesando...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Procesar Excel
-                    </>
-                  )}
-                </Button>
+      {modo === "excel" && (
+        <>
+          {/* Instrucciones */}
+          <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-950/20">
+            <CardContent className="p-4">
+              <h3 className="font-medium text-blue-700 dark:text-blue-400 mb-2">Formato del archivo Excel</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                El archivo debe contener las siguientes columnas en orden:
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">A: Fecha</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">B: Nº Pedido</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">C: Nombre</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">D: Teléfono</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">E: Barrio</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">F: Dirección</span>
+                <span className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">G: Entre Calles</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">H: SKU</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">I: Monto</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">J: Forma Pago</span>
               </div>
-            )}
+            </CardContent>
+          </Card>
+
+          {/* Zona de carga */}
+          {!resultado && (
+            <Card>
+              <CardContent className="p-6">
+                <div
+                  {...getRootProps()}
+                  className={`
+                    border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
+                    transition-colors duration-200
+                    ${isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"}
+                  `}
+                >
+                  <input {...getInputProps()} />
+                  <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  {archivo ? (
+                    <div className="space-y-2">
+                      <p className="font-medium text-foreground">{archivo.name}</p>
+                      <p className="text-sm text-muted-foreground">{(archivo.size / 1024).toFixed(1)} KB</p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setArchivo(null)
+                          setPedidos([])
+                        }}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Quitar archivo
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-muted-foreground">Arrastra tu archivo Excel aquí o haz clic para seleccionar</p>
+                      <p className="text-xs text-muted-foreground">Formatos soportados: .xlsx, .xls</p>
+                    </div>
+                  )}
+                </div>
+
+                {archivo && pedidos.length === 0 && (
+                  <div className="mt-4 flex justify-center">
+                    <Button onClick={procesarExcel} disabled={procesando}>
+                      {procesando ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Procesando...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Procesar Excel
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {modo === "texto" && !resultado && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pegar texto de WhatsApp</CardTitle>
+            <CardDescription>
+              Pegá el listado tal cual te lo manda el cliente. Reconoce ventas y cambios (marcados con "(cambio)" +
+              "Devuelve:"/"Le enviamos:") automáticamente.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="max-w-xs space-y-1">
+              <Label className="text-xs">Fecha del pedido</Label>
+              <Input type="date" value={fechaTexto} onChange={(e) => setFechaTexto(e.target.value)} />
+            </div>
+            <textarea
+              value={textoPegado}
+              onChange={(e) => setTextoPegado(e.target.value)}
+              placeholder={"Sáenz Peña $65.000\nHyline negra 38\nPuma blanca 38\n..."}
+              className="w-full min-h-[280px] rounded-md border bg-background p-3 text-sm font-mono"
+            />
+            <div className="flex justify-center">
+              <Button onClick={procesarTexto} disabled={procesandoTexto || !textoPegado.trim()}>
+                {procesandoTexto ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Interpretando...
+                  </>
+                ) : (
+                  <>
+                    <ClipboardPaste className="h-4 w-4 mr-2" />
+                    Interpretar
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -486,7 +652,7 @@ export function CargaMasivaClient() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg text-center">
                 <p className="text-2xl font-bold text-green-600">{resultado.exitosos}</p>
-                <p className="text-sm text-muted-foreground">Ventas creadas</p>
+                <p className="text-sm text-muted-foreground">Registros creados</p>
               </div>
               {resultado.fallidos > 0 && (
                 <div className="bg-red-50 dark:bg-red-950/30 p-4 rounded-lg text-center">
@@ -513,11 +679,12 @@ export function CargaMasivaClient() {
                 variant="outline"
                 onClick={() => {
                   setArchivo(null)
+                  setTextoPegado("")
                   setPedidos([])
                   setResultado(null)
                 }}
               >
-                Cargar Otro Archivo
+                Cargar Otro
               </Button>
             </div>
           </CardContent>
@@ -563,7 +730,7 @@ export function CargaMasivaClient() {
                     }
                   `}
                 >
-                  {editandoIndex === index && pedidoEditado ? (
+                  {editandoIndex === index && pedidoEditado && pedidoEditado.tipo !== "cambio" ? (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="font-medium">Editando Pedido #{pedidoEditado.numeroPedido}</h4>
@@ -673,6 +840,12 @@ export function CargaMasivaClient() {
                         <div>
                           <h4 className="font-medium flex items-center gap-2">
                             Pedido #{pedido.numeroPedido}
+                            {pedido.tipo === "cambio" && (
+                              <span className="inline-flex items-center gap-1 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-0.5 rounded">
+                                <Repeat className="h-3 w-3" />
+                                Cambio
+                              </span>
+                            )}
                             {pedido.valid ? (
                               <CheckCircle2 className="h-4 w-4 text-green-600" />
                             ) : (
@@ -686,16 +859,20 @@ export function CargaMasivaClient() {
                         <div className="flex items-center gap-2">
                           <div className="text-right mr-4">
                             <p className="font-semibold text-lg">{formatCurrency(pedido.monto)}</p>
-                            <p className="text-xs text-muted-foreground capitalize">{pedido.medioPago}</p>
+                            {pedido.tipo !== "cambio" && (
+                              <p className="text-xs text-muted-foreground capitalize">{pedido.medioPago}</p>
+                            )}
                           </div>
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            className="h-8 w-8 bg-transparent"
-                            onClick={() => iniciarEdicion(index)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                          {pedido.tipo !== "cambio" && (
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="h-8 w-8 bg-transparent"
+                              onClick={() => iniciarEdicion(index)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             size="icon"
                             variant="outline"
@@ -707,40 +884,75 @@ export function CargaMasivaClient() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-3">
-                        <div>
-                          <span className="text-muted-foreground">Teléfono:</span> {pedido.telefono || "-"}
+                      {pedido.tipo === "cambio" ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground">Pares entrega / devuelve:</p>
+                          <div className="space-y-1">
+                            {(pedido.pares || []).map((par, parIndex) => (
+                              <div key={parIndex} className="flex items-center gap-2 text-xs flex-wrap">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded ${
+                                    par.recibido.encontrado
+                                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                  }`}
+                                >
+                                  <Package className="h-3 w-3" />
+                                  Devuelve: {par.recibido.sku}
+                                </span>
+                                <Repeat className="h-3 w-3 text-muted-foreground" />
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded ${
+                                    par.entregado.encontrado
+                                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                  }`}
+                                >
+                                  <Package className="h-3 w-3" />
+                                  Entrega: {par.entregado.sku}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-muted-foreground">Barrio:</span> {pedido.barrio || "-"}
-                        </div>
-                        <div className="col-span-2">
-                          <span className="text-muted-foreground">Dirección:</span> {pedido.direccion || "-"}
-                        </div>
-                      </div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-3">
+                            <div>
+                              <span className="text-muted-foreground">Teléfono:</span> {pedido.telefono || "-"}
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Barrio:</span> {pedido.barrio || "-"}
+                            </div>
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">Dirección:</span> {pedido.direccion || "-"}
+                            </div>
+                          </div>
 
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium text-muted-foreground">Productos:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {pedido.productos.map((producto, pIndex) => (
-                            <span
-                              key={pIndex}
-                              className={`
-                                inline-flex items-center gap-1 text-xs px-2 py-1 rounded
-                                ${
-                                  producto.encontrado
-                                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                }
-                              `}
-                            >
-                              <Package className="h-3 w-3" />
-                              {producto.sku}
-                              {producto.encontrado && ` (${formatCurrency(producto.costo)})`}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">Productos:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {pedido.productos.map((producto, pIndex) => (
+                                <span
+                                  key={pIndex}
+                                  className={`
+                                    inline-flex items-center gap-1 text-xs px-2 py-1 rounded
+                                    ${
+                                      producto.encontrado
+                                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                    }
+                                  `}
+                                >
+                                  <Package className="h-3 w-3" />
+                                  {producto.sku}
+                                  {producto.encontrado && ` (${formatCurrency(producto.costo)})`}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       {!pedido.valid && (
                         <div className="mt-3 text-sm text-red-600">
@@ -764,6 +976,7 @@ export function CargaMasivaClient() {
                   variant="outline"
                   onClick={() => {
                     setArchivo(null)
+                    setTextoPegado("")
                     setPedidos([])
                   }}
                 >
@@ -778,7 +991,7 @@ export function CargaMasivaClient() {
                   ) : (
                     <>
                       <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Cargar {pedidosValidos} Venta{pedidosValidos !== 1 ? "s" : ""}
+                      Cargar {pedidosValidos} Registro{pedidosValidos !== 1 ? "s" : ""}
                     </>
                   )}
                 </Button>

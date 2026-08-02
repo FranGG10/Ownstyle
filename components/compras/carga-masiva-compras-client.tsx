@@ -14,7 +14,9 @@ import {
   Pencil,
   Trash2,
   Save,
+  ClipboardPaste,
 } from "lucide-react"
+import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { useDropzone } from "react-dropzone"
@@ -60,6 +62,11 @@ export function CargaMasivaComprasClient() {
 
   const [editandoIndex, setEditandoIndex] = useState<number | null>(null)
   const [pedidoEditado, setPedidoEditado] = useState<PedidoCompraProcesado | null>(null)
+
+  const [modo, setModo] = useState<"excel" | "texto">("excel")
+  const [fechaTexto, setFechaTexto] = useState(new Date().toISOString().split("T")[0])
+  const [textoPegado, setTextoPegado] = useState("")
+  const [procesandoTexto, setProcesandoTexto] = useState(false)
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -214,6 +221,57 @@ export function CargaMasivaComprasClient() {
     }
   }
 
+  const procesarTexto = async () => {
+    if (!textoPegado.trim()) return
+
+    setProcesandoTexto(true)
+    try {
+      const response = await fetch("/api/interpretar-pedido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: "compras", texto: textoPegado, fecha: fechaTexto }),
+      })
+      const data = await response.json()
+
+      if (data.error) {
+        alert("Error al interpretar el texto: " + data.error)
+        return
+      }
+
+      const pedidosProcesados: PedidoCompraProcesado[] = (data.pedidos || []).map((p: any) => {
+        const productos: ProductoEncontrado[] = (p.productos || []).map((prod: any) => ({
+          sku: prod.sku || prod.fraseOriginal,
+          id_producto: prod.id_producto || 0,
+          nombre: prod.nombre || prod.fraseOriginal,
+          costo: Number(prod.costo) || 0,
+          cantidad: prod.cantidad || 1,
+          encontrado: Boolean(prod.encontrado),
+        }))
+
+        const totalCalculado = productos.filter((p) => p.encontrado).reduce((sum, p) => sum + p.costo * p.cantidad, 0)
+
+        return {
+          fecha: p.fecha,
+          numeroPedido: p.numeroPedido,
+          proveedor: p.proveedor,
+          medioPago: p.medioPago || "efectivo",
+          items: productos.map((p) => ({ sku: p.sku, cantidad: p.cantidad })),
+          productos,
+          valid: p.errores.length === 0,
+          errores: p.errores as string[],
+          totalCalculado,
+        }
+      })
+
+      setPedidos(pedidosProcesados)
+    } catch (error: any) {
+      console.error("Error procesando texto:", error)
+      alert("Error al interpretar el texto: " + error.message)
+    } finally {
+      setProcesandoTexto(false)
+    }
+  }
+
   const cargarCompras = async () => {
     const pedidosValidos = pedidos.filter((p) => p.valid)
     if (pedidosValidos.length === 0) {
@@ -360,84 +418,137 @@ export function CargaMasivaComprasClient() {
         </Link>
         <div>
           <h2 className="text-lg font-semibold">Carga Masiva de Compras</h2>
-          <p className="text-sm text-muted-foreground">Importa multiples compras desde un archivo Excel</p>
+          <p className="text-sm text-muted-foreground">Importa multiples compras desde un Excel o pegando el texto</p>
         </div>
       </div>
 
-      {/* Instrucciones */}
-      <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-950/20">
-        <CardContent className="p-4">
-          <h3 className="font-medium text-blue-700 dark:text-blue-400 mb-2">Formato del archivo Excel</h3>
-          <p className="text-sm text-muted-foreground mb-2">
-            El archivo debe contener las siguientes columnas en orden:
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">A: Fecha</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">B: Pedido</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">C: Proveedor</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">D: Medio de Pago</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">E: SKU</span>
-            <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">F: Cantidad</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Zona de carga */}
       {!resultado && (
-        <Card>
-          <CardContent className="p-6">
-            <div
-              {...getRootProps()}
-              className={`
-                border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-                transition-colors duration-200
-                ${isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"}
-              `}
-            >
-              <input {...getInputProps()} />
-              <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              {archivo ? (
-                <div className="space-y-2">
-                  <p className="font-medium text-foreground">{archivo.name}</p>
-                  <p className="text-sm text-muted-foreground">{(archivo.size / 1024).toFixed(1)} KB</p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setArchivo(null)
-                      setPedidos([])
-                    }}
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Quitar archivo
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-muted-foreground">Arrastra tu archivo Excel aqui o haz clic para seleccionar</p>
-                  <p className="text-xs text-muted-foreground">Formatos soportados: .xlsx, .xls</p>
-                </div>
-              )}
-            </div>
+        <div className="flex items-center gap-2">
+          <Button variant={modo === "excel" ? "default" : "outline"} size="sm" onClick={() => setModo("excel")}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Excel
+          </Button>
+          <Button variant={modo === "texto" ? "default" : "outline"} size="sm" onClick={() => setModo("texto")}>
+            <ClipboardPaste className="h-4 w-4 mr-2" />
+            Pegar texto
+          </Button>
+        </div>
+      )}
 
-            {archivo && pedidos.length === 0 && (
-              <div className="mt-4 flex justify-center">
-                <Button onClick={procesarExcel} disabled={procesando}>
-                  {procesando ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Procesando...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Procesar Excel
-                    </>
-                  )}
-                </Button>
+      {modo === "excel" && (
+        <>
+          {/* Instrucciones */}
+          <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-950/20">
+            <CardContent className="p-4">
+              <h3 className="font-medium text-blue-700 dark:text-blue-400 mb-2">Formato del archivo Excel</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                El archivo debe contener las siguientes columnas en orden:
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">A: Fecha</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">B: Pedido</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">C: Proveedor</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">D: Medio de Pago</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">E: SKU</span>
+                <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">F: Cantidad</span>
               </div>
-            )}
+            </CardContent>
+          </Card>
+
+          {/* Zona de carga */}
+          {!resultado && (
+            <Card>
+              <CardContent className="p-6">
+                <div
+                  {...getRootProps()}
+                  className={`
+                    border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
+                    transition-colors duration-200
+                    ${isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"}
+                  `}
+                >
+                  <input {...getInputProps()} />
+                  <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  {archivo ? (
+                    <div className="space-y-2">
+                      <p className="font-medium text-foreground">{archivo.name}</p>
+                      <p className="text-sm text-muted-foreground">{(archivo.size / 1024).toFixed(1)} KB</p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setArchivo(null)
+                          setPedidos([])
+                        }}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Quitar archivo
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-muted-foreground">Arrastra tu archivo Excel aqui o haz clic para seleccionar</p>
+                      <p className="text-xs text-muted-foreground">Formatos soportados: .xlsx, .xls</p>
+                    </div>
+                  )}
+                </div>
+
+                {archivo && pedidos.length === 0 && (
+                  <div className="mt-4 flex justify-center">
+                    <Button onClick={procesarExcel} disabled={procesando}>
+                      {procesando ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Procesando...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Procesar Excel
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {modo === "texto" && !resultado && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pegar texto de WhatsApp</CardTitle>
+            <CardDescription>Pegá el listado de compras tal cual te lo manda el cliente.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="max-w-xs space-y-1">
+              <Label className="text-xs">Fecha del pedido</Label>
+              <Input type="date" value={fechaTexto} onChange={(e) => setFechaTexto(e.target.value)} />
+            </div>
+            <textarea
+              value={textoPegado}
+              onChange={(e) => setTextoPegado(e.target.value)}
+              placeholder={"MAGDA\nMQ BCO 40 40\nMQ NE 41(x3)\n..."}
+              className="w-full min-h-[280px] rounded-md border bg-background p-3 text-sm font-mono"
+            />
+            <div className="flex justify-center">
+              <Button onClick={procesarTexto} disabled={procesandoTexto || !textoPegado.trim()}>
+                {procesandoTexto ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Interpretando...
+                  </>
+                ) : (
+                  <>
+                    <ClipboardPaste className="h-4 w-4 mr-2" />
+                    Interpretar
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -482,6 +593,7 @@ export function CargaMasivaComprasClient() {
                 variant="outline"
                 onClick={() => {
                   setArchivo(null)
+                  setTextoPegado("")
                   setPedidos([])
                   setResultado(null)
                 }}

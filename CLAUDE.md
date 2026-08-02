@@ -173,6 +173,43 @@ factura (CAE, tipo, neto/IVA/total) y un link al detalle de cada venta.
 Pendiente / fuera de alcance por ahora: PDF/QR del comprobante, modo
 automático al crear la venta, notas de crédito/débito, recibos.
 
+## Carga masiva "Pegar texto" (ventas, compras y cambios) — sin IA, sin costo
+
+Además de subir un Excel, `/ventas/carga-masiva` y `/compras/carga-masiva`
+tienen un modo **"Pegar texto"**: se pega el mensaje de WhatsApp tal cual
+(el mismo texto que antes había que pasar por un Project de Claude aparte
+para reformatear) y el sistema arma el mismo preview de siempre. Reconoce
+ventas y cambios mezclados en un mismo texto (un cambio se marca con
+"(cambio)" + "Devuelve:"/"Le enviamos:").
+
+Es un **parser de reglas** (`lib/interpretar-pedido.ts`), sin llamar a
+ninguna IA — Francisco pidió explícitamente no sumar costos por uso. Usa:
+- Tabla `diccionario_productos` (`scripts/012-diccionario-productos.sql`,
+  importada de la hoja "Diccionario" de `Master ownstyle real.xlsx`): mapea
+  frases sueltas (con typos/apodos ya conocidos, ej. "AIRFROCE", "Knu"→Vans)
+  a un SKU base (con `-XX` en vez del talle) + marca/modelo.
+- Match exacto normalizado primero; si no hay, match difuso (distancia de
+  edición) contra el Diccionario para variantes nuevas parecidas a una ya
+  conocida (ej. "MA BCO" → "MQ BCO", "BB" → "MQ BB" vía heurística de
+  prefijo). Si no hay match confiable, **no se inventa nada** — la línea
+  queda marcada como error para completar a mano en el preview, mismo
+  patrón que ya usa la carga por Excel para un SKU no encontrado.
+- El SKU final (sku_base + talle) siempre se valida contra la tabla real
+  `productos` — nunca contra algo que el parser "cree" que existe.
+
+Endpoint: `POST /api/interpretar-pedido` (`{ tipo: 'ventas'|'compras', texto, fecha }`).
+Los pedidos tipo `cambio` que salen de "Pegar texto" en ventas se mandan a
+`/api/cambios/carga-masiva`, que ahora acepta `pares: [...]` (más de un par
+entrega/devuelve por cambio — caso real: un cambio con dos productos
+distintos devueltos y entregados a la vez).
+
+Probado exhaustivamente contra un mensaje real de ventas+cambios (Francisco
+lo compartió) con 100% de aciertos, incluyendo los casos más difíciles
+(cambio con dos pares, "la misma" resuelto al modelo devuelto, typos y
+códigos sin prefijo). El lado de compras se armó siguiendo la misma
+especificación pero **todavía no se probó con un mensaje de compra real** —
+conviene revisar la primera vez que se use con datos reales.
+
 ## Cómo levantar el proyecto
 
 ```bash
