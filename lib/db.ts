@@ -67,6 +67,7 @@ export interface PlanCuenta {
   padre: number | null
   nivel: number
   activo: boolean
+  comportamiento: "variable" | "fijo" | null
 }
 
 export interface Movimiento {

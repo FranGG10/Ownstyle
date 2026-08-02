@@ -1,8 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   TrendingUp,
   TrendingDown,
@@ -15,9 +18,128 @@ import {
   AlertTriangle,
   CheckCircle,
   AlertCircle,
+  Calendar,
 } from "lucide-react"
+import { IndicatorCard, type Indicator } from "./indicator-card"
+import { fechaAISO } from "@/lib/format"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
+
+interface Preferencia {
+  indicadorCodigo: string
+  esFavorito: boolean
+  orden: number
+}
+
+function IndicadoresGenerales() {
+  const [desde, setDesde] = useState(() => fechaAISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)))
+  const [hasta, setHasta] = useState(() => fechaAISO(new Date()))
+
+  const setPeriodoRapido = (tipo: "hoy" | "semana" | "mes" | "año") => {
+    const hoy = new Date()
+    const inicio = new Date()
+
+    switch (tipo) {
+      case "hoy":
+        break
+      case "semana":
+        inicio.setDate(hoy.getDate() - 7)
+        break
+      case "mes":
+        inicio.setMonth(hoy.getMonth(), 1)
+        break
+      case "año":
+        inicio.setMonth(0, 1)
+        break
+    }
+
+    setDesde(fechaAISO(inicio))
+    setHasta(fechaAISO(hoy))
+  }
+
+  const { data: resumenData, isLoading: loadingResumen } = useSWR(
+    `/api/indicadores/resumen?from=${desde}&to=${hasta}`,
+    fetcher,
+  )
+  const { data: prefsData, mutate: mutatePrefs } = useSWR("/api/dashboard-preferences", fetcher)
+
+  const indicators: Indicator[] = resumenData?.indicators || []
+  const preferencias: Preferencia[] = prefsData?.preferences || []
+  const favoritosPorCodigo = new Map(preferencias.map((p) => [p.indicadorCodigo, p.esFavorito]))
+
+  const toggleFavorito = async (code: string, favorito: boolean) => {
+    mutatePrefs(
+      {
+        preferences: [
+          ...preferencias.filter((p) => p.indicadorCodigo !== code),
+          { indicadorCodigo: code, esFavorito: favorito, orden: 0 },
+        ],
+      },
+      false,
+    )
+    await fetch("/api/dashboard-preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ indicadorCodigo: code, esFavorito: favorito }),
+    })
+    mutatePrefs()
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Indicadores Generales</h2>
+          <p className="text-sm text-muted-foreground">
+            Marcá con la estrella los que querés ver en el Dashboard.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="w-40" />
+            <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="w-40" />
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setPeriodoRapido("hoy")}>
+            Hoy
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setPeriodoRapido("semana")}>
+            Última Semana
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setPeriodoRapido("mes")}>
+            Este Mes
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setPeriodoRapido("año")}>
+            Este Año
+          </Button>
+        </div>
+      </div>
+
+      {loadingResumen ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <div className="h-16 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {indicators.map((ind) => (
+            <IndicatorCard
+              key={ind.code}
+              indicator={ind}
+              esFavorito={favoritosPorCodigo.get(ind.code) ?? false}
+              onToggleFavorito={toggleFavorito}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("es-AR", {
@@ -154,6 +276,12 @@ export function IndicadoresClient() {
         <Badge variant="outline" className="text-muted-foreground">
           Datos del mes actual
         </Badge>
+      </div>
+
+      <IndicadoresGenerales />
+
+      <div className="border-t pt-6">
+        <h2 className="text-lg font-semibold mb-4">Stock y Ranking de Modelos</h2>
       </div>
 
       {/* Row 1: KPIs principales */}

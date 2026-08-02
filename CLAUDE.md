@@ -222,6 +222,55 @@ aciertos (verificado con scripts ad-hoc, sin pasar por el navegador):
   El número de pedido es correlativo por fecha (si en un mismo pegado hay
   mensajes de más de un día, la numeración arranca de nuevo en cada día).
 
+## Indicadores con favoritos, Evolución de Ventas y Punto de Equilibrio
+
+Igual que Sindic, pero calculado 100% con datos que ya carga Ownstyle a mano (sin
+ninguna integración externa). La clave que hizo esto viable sin tocar el modelo de
+datos: Ownstyle ya postea el Costo de Mercadería Vendida (`createAsientoVenta` en
+`app/actions/ventas.ts`, cuenta `5.1`) y cada gasto de Ingresos/Egresos
+(`app/actions/ingresos-egresos.ts`, cuentas `5.4`-`5.10`) como asientos contables
+reales — `asientos_detalle` + `plan_cuentas` ya es la fuente de verdad completa de
+ingresos y gastos, igual que `JournalLine` + `ChartOfAccount.costBehavior` en Sindic.
+
+- `plan_cuentas.comportamiento` (`variable` | `fijo` | `NULL`, migración
+  `scripts/013-indicadores-favoritos.sql`): clasifica cada cuenta de gasto para separar
+  costos variables/fijos en márgenes y Punto de Equilibrio. Sin clasificar se trata
+  como `fijo` por defecto (no perder gastos del cálculo). Editable en
+  `/contabilidad` → Plan de Cuentas (`components/contabilidad/plan-cuentas.tsx`, select
+  al lado de cada cuenta de gasto, `PATCH /api/contabilidad/plan-cuentas/[id]`).
+  **Ojo**: la tabla `plan_cuentas` real de producción difiere de
+  `scripts/001-create-schema.sql`/`002-seed-data.sql` (nombres y códigos de cuenta
+  cambiaron con el tiempo — p.ej. `5.1` es directamente "Costo de Mercadería Vendida",
+  no un padre `5.1.1`; existen además `5.2` "Gastos Operativos" y `5.3` "Compras" sin
+  uso real). Tampoco existe la columna `asientos.estado` que sí está en el script
+  original — no filtrar por ella en queries nuevas.
+- `preferencias_dashboard` (misma migración): favoritos de indicadores para el
+  Dashboard, un favorito por `indicador_codigo`. `GET`/`PUT /api/dashboard-preferences`.
+- `GET /api/indicadores/resumen?from&to`: indicadores planos (`total_facturado`,
+  `cantidad_ventas`, `ticket_promedio`, `margen_bruto_pct`, `margen_contribucion_pct`,
+  `margen_neto_pct`, `resultado_neto`), calculados desde `asientos_detalle` agrupado por
+  `plan_cuentas.comportamiento`. Se muestran en `/indicadores` (sección "Indicadores
+  Generales", arriba del reporte de stock/ranking ya existente) con estrella de
+  favorito por card (`components/indicadores/indicator-card.tsx`).
+- Dashboard (`/`): `components/dashboard/favoritos-indicadores.tsx` (favoritos del mes
+  actual) y `components/dashboard/ventas-evolucion.tsx` (gráfico de barras por
+  día/mes/año, `GET /api/reportes/ventas-evolucion`) — `movimientos.fecha` ya es
+  `DATE` puro, así que a diferencia de Sindic no hace falta ajuste de huso horario acá.
+- `/punto-equilibrio` (`GET /api/punto-equilibrio?from&to`): Ventas del período, Ventas
+  de Equilibrio, Margen de Contribución %, Resultado, gráfico CVP
+  (`components/punto-equilibrio/cvp-chart.tsx`), detalle de costos fijos/variables por
+  cuenta, comparación con el período anterior.
+  **Diferencia clave con Sindic**: Sindic calcula el estado (rentable/empate/pierde)
+  comparando ROAS actual vs. ROAS de equilibrio. Acá no hay gasto publicitario
+  atribuible todavía, así que el estado compara **Ventas reales vs. Ventas de
+  Equilibrio** directamente (banda ±2%).
+
+**Pendiente, a pedido explícito de Francisco**: ROAS, CAC y gasto publicitario como
+indicador propio quedan afuera hasta que pase el token de la plataforma de ads que usa
+para pautar — dijo textualmente "todavía no está, ya te voy a pasar el token, así que
+dejemoslo para después". Cuando eso pase, se puede sumar ROAS encima del cálculo de
+Punto de Equilibrio ya armado, sin romper nada de lo anterior.
+
 ## Cómo levantar el proyecto
 
 ```bash

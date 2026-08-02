@@ -21,6 +21,7 @@ import {
   Activity,
   FileText,
   History,
+  Scale,
 } from "lucide-react"
 
 const menuItems = [
@@ -31,6 +32,7 @@ const menuItems = [
   { href: "/cambios", label: "Cambios", icon: RefreshCw },
   { href: "/contabilidad", label: "Contabilidad", icon: BookOpen },
   { href: "/ingresos-egresos", label: "Ingresos/Egresos", icon: Wallet },
+  { href: "/punto-equilibrio", label: "Punto de Equilibrio", icon: Scale },
   { href: "/indicadores", label: "Indicadores", icon: Activity },
   { href: "/informes", label: "Informes", icon: FileText },
   { href: "/historial", label: "Historial", icon: History },

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -12,9 +12,24 @@ interface PlanCuentasProps {
   cuentas: PlanCuenta[]
 }
 
-export function PlanCuentas({ cuentas }: PlanCuentasProps) {
+export function PlanCuentas({ cuentas: cuentasIniciales }: PlanCuentasProps) {
   const [search, setSearch] = useState("")
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set())
+  const [cuentas, setCuentas] = useState(cuentasIniciales)
+
+  useEffect(() => {
+    setCuentas(cuentasIniciales)
+  }, [cuentasIniciales])
+
+  const cambiarComportamiento = async (idCuenta: number, comportamiento: "variable" | "fijo" | "") => {
+    const valor = comportamiento === "" ? null : comportamiento
+    setCuentas((prev) => prev.map((c) => (c.id_cuenta === idCuenta ? { ...c, comportamiento: valor } : c)))
+    await fetch(`/api/contabilidad/plan-cuentas/${idCuenta}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comportamiento: valor }),
+    })
+  }
 
   const toggleExpand = (id: number) => {
     const newExpanded = new Set(expandedItems)
@@ -61,6 +76,7 @@ export function PlanCuentas({ cuentas }: PlanCuentasProps) {
     const isExpanded = expandedItems.has(item.id_cuenta)
     const badge = getTipoBadge(item.tipo)
     const esImputable = item.nivel === 3
+    const esCuentaDeGasto = item.tipo === "gasto" && !hasChildren
 
     return (
       <div key={item.id_cuenta}>
@@ -90,6 +106,21 @@ export function PlanCuentas({ cuentas }: PlanCuentasProps) {
             <Badge variant="outline" className="text-xs">
               Imputable
             </Badge>
+          )}
+          {esCuentaDeGasto && (
+            <select
+              value={item.comportamiento ?? ""}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                cambiarComportamiento(item.id_cuenta, e.target.value as "variable" | "fijo" | "")
+              }
+              className="rounded-md border bg-background px-2 py-1 text-xs"
+              title="Clasificación para Punto de Equilibrio"
+            >
+              <option value="">Sin clasificar</option>
+              <option value="variable">Variable</option>
+              <option value="fijo">Fijo</option>
+            </select>
           )}
         </div>
         {hasChildren && isExpanded && item.children.map(renderTreeItem)}

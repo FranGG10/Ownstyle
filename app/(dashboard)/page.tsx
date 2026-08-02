@@ -4,6 +4,8 @@ import { Header } from "@/components/header"
 import { StatsCard } from "@/components/dashboard/stats-card"
 import { RecentMovements } from "@/components/dashboard/recent-movements"
 import { LowStockAlert } from "@/components/dashboard/low-stock-alert"
+import { FavoritosIndicadores } from "@/components/dashboard/favoritos-indicadores"
+import { VentasEvolucionChart } from "@/components/dashboard/ventas-evolucion"
 import { neon } from "@neondatabase/serverless"
 import { Package, ShoppingCart, ShoppingBag, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/format"
@@ -122,6 +124,10 @@ export default async function DashboardPage() {
             variant="warning"
           />
         </div>
+
+        <FavoritosIndicadores />
+
+        <VentasEvolucionChart />
 
         {/* Content Grid */}
         <div className="grid gap-6 lg:grid-cols-2">
