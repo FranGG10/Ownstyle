@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { formatCurrency } from "@/lib/format"
+import { formatCurrency, hoyArgentina } from "@/lib/format"
 import { createVenta } from "@/app/actions/ventas"
 import type { Producto, Cliente } from "@/lib/db"
 
@@ -37,7 +37,7 @@ export function VentaForm({ productos, clientes }: VentaFormProps) {
 
   // Form fields - Datos obligatorios
   const [clienteId, setClienteId] = useState<string>("")
-  const [fecha, setFecha] = useState(new Date().toISOString().split("T")[0])
+  const [fecha, setFecha] = useState(hoyArgentina())
   const [medioPago, setMedioPago] = useState<string>("")
   const [importeTotal, setImporteTotal] = useState<number>(0)
 

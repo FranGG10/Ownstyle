@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Plus, Calendar, Filter, X, Upload, Receipt } from "lucide-react"
 import Link from "next/link"
 import useSWR from "swr"
+import { fechaAISO, formatDate } from "@/lib/format"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -72,8 +73,8 @@ export function VentasClient() {
         break
     }
 
-    setFechaDesde(desde.toISOString().split("T")[0])
-    setFechaHasta(hoy.toISOString().split("T")[0])
+    setFechaDesde(fechaAISO(desde))
+    setFechaHasta(fechaAISO(hoy))
     setFiltroActivo(true)
   }
 
@@ -96,8 +97,8 @@ export function VentasClient() {
         break
     }
 
-    setFacturarDesde(desde.toISOString().split("T")[0])
-    setFacturarHasta(hoy.toISOString().split("T")[0])
+    setFacturarDesde(fechaAISO(desde))
+    setFacturarHasta(fechaAISO(hoy))
   }
 
   const toggleModoFacturacion = () => {
@@ -201,8 +202,8 @@ export function VentasClient() {
                 <div className="mt-3 flex items-center gap-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 px-3 py-2 rounded-md">
                   <Receipt className="h-4 w-4" />
                   <span>
-                    Ventas sin facturar entre {new Date(facturarDesde).toLocaleDateString("es-AR")} y{" "}
-                    {new Date(facturarHasta).toLocaleDateString("es-AR")}, todas preseleccionadas. Destildá las que
+                    Ventas sin facturar entre {formatDate(facturarDesde)} y{" "}
+                    {formatDate(facturarHasta)}, todas preseleccionadas. Destildá las que
                     no quieras y apretá "Facturar seleccionadas".
                   </span>
                 </div>
@@ -293,8 +294,8 @@ export function VentasClient() {
                   <Filter className="h-4 w-4" />
                   <span>
                     Mostrando ventas
-                    {fechaDesde && ` desde ${new Date(fechaDesde).toLocaleDateString("es-AR")}`}
-                    {fechaHasta && ` hasta ${new Date(fechaHasta).toLocaleDateString("es-AR")}`}
+                    {fechaDesde && ` desde ${formatDate(fechaDesde)}`}
+                    {fechaHasta && ` hasta ${formatDate(fechaHasta)}`}
                   </span>
                 </div>
               )}

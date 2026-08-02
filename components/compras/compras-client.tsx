@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Plus, Calendar, Filter, X, Upload } from "lucide-react"
 import Link from "next/link"
 import useSWR from "swr"
+import { fechaAISO, formatDate } from "@/lib/format"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -60,8 +61,8 @@ export function ComprasClient() {
         break
     }
 
-    setFechaDesde(desde.toISOString().split("T")[0])
-    setFechaHasta(hoy.toISOString().split("T")[0])
+    setFechaDesde(fechaAISO(desde))
+    setFechaHasta(fechaAISO(hoy))
     setFiltroActivo(true)
   }
 
@@ -157,8 +158,8 @@ export function ComprasClient() {
               <Filter className="h-4 w-4" />
               <span>
                 Mostrando compras
-                {fechaDesde && ` desde ${new Date(fechaDesde).toLocaleDateString("es-AR")}`}
-                {fechaHasta && ` hasta ${new Date(fechaHasta).toLocaleDateString("es-AR")}`}
+                {fechaDesde && ` desde ${formatDate(fechaDesde)}`}
+                {fechaHasta && ` hasta ${formatDate(fechaHasta)}`}
               </span>
             </div>
           )}

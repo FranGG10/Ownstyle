@@ -23,7 +23,7 @@ import {
 import Link from "next/link"
 import { useDropzone } from "react-dropzone"
 import * as XLSX from "xlsx"
-import { formatCurrency } from "@/lib/format"
+import { formatCurrency, hoyArgentina } from "@/lib/format"
 import { useRouter } from "next/navigation"
 
 interface PedidoExcel {
@@ -78,7 +78,7 @@ export function CargaMasivaClient() {
   const [pedidoEditado, setPedidoEditado] = useState<PedidoProcesado | null>(null)
 
   const [modo, setModo] = useState<"excel" | "texto">("excel")
-  const [fechaTexto, setFechaTexto] = useState(new Date().toISOString().split("T")[0])
+  const [fechaTexto, setFechaTexto] = useState(hoyArgentina())
   const [textoPegado, setTextoPegado] = useState("")
   const [procesandoTexto, setProcesandoTexto] = useState(false)
 

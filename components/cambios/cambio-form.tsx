@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { RefreshCw, Package, ArrowRight, CheckCircle2, Plus, Trash2 } from "lucide-react"
 import { createCambio } from "@/app/actions/cambios"
+import { hoyArgentina } from "@/lib/format"
 
 interface Producto {
   id_producto: number
@@ -205,7 +206,7 @@ export function CambioForm({ productos, clientes }: CambioFormProps) {
   const [success, setSuccess] = useState(false)
 
   const [formData, setFormData] = useState({
-    fecha: new Date().toISOString().split("T")[0],
+    fecha: hoyArgentina(),
     id_cliente: "",
     nombre_cliente: "",
     telefono: "",

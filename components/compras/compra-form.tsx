@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
-import { formatCurrency } from "@/lib/format"
+import { formatCurrency, hoyArgentina } from "@/lib/format"
 import { createCompra } from "@/app/actions/compras"
 import type { Producto, Proveedor } from "@/lib/db"
 
@@ -38,7 +38,7 @@ export function CompraForm({ productos, proveedores }: CompraFormProps) {
 
   // Form fields
   const [proveedorId, setProveedorId] = useState<string>("")
-  const [fecha, setFecha] = useState(new Date().toISOString().split("T")[0])
+  const [fecha, setFecha] = useState(hoyArgentina())
   const [medioPago, setMedioPago] = useState<string>("")
   const [observaciones, setObservaciones] = useState("")
 

@@ -12,6 +12,7 @@ import { PlanCuentas } from "./plan-cuentas"
 import { ReportesFinancieros } from "./reportes-financieros"
 import { BookOpen, Calculator, FileSpreadsheet, PieChart, Calendar, Filter, X } from "lucide-react"
 import useSWR from "swr"
+import { fechaAISO, formatDate } from "@/lib/format"
 
 interface ContabilidadClientProps {
   initialData: {
@@ -80,8 +81,8 @@ export function ContabilidadClient({ initialData }: ContabilidadClientProps) {
         return
     }
 
-    setFechaDesde(desde.toISOString().split("T")[0])
-    setFechaHasta(hasta.toISOString().split("T")[0])
+    setFechaDesde(fechaAISO(desde))
+    setFechaHasta(fechaAISO(hasta))
   }
 
   return (
@@ -151,8 +152,8 @@ export function ContabilidadClient({ initialData }: ContabilidadClientProps) {
             <div className="mt-3 flex items-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-700">
               <Calendar className="h-4 w-4" />
               <span>
-                Mostrando datos del período: {new Date(fechaDesde).toLocaleDateString("es-AR")} al{" "}
-                {new Date(fechaHasta).toLocaleDateString("es-AR")}
+                Mostrando datos del período: {formatDate(fechaDesde)} al{" "}
+                {formatDate(fechaHasta)}
               </span>
               {isLoading && <span className="ml-2 text-muted-foreground">(Cargando...)</span>}
             </div>

@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FileText, TrendingUp, TrendingDown, DollarSign, Package, Search, ArrowUpRight, ArrowDownRight, Receipt } from "lucide-react"
 import useSWR from "swr"
 import Link from "next/link"
+import { formatDate, fechaAISO } from "@/lib/format"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -21,22 +22,18 @@ function formatCurrency(amount: number) {
   }).format(amount)
 }
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("es-AR")
-}
-
 export default function InformesClient() {
   const today = new Date()
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-  
-  const [fechaDesde, setFechaDesde] = useState(firstDayOfMonth.toISOString().split("T")[0])
-  const [fechaHasta, setFechaHasta] = useState(today.toISOString().split("T")[0])
-  
-  const [fechaDesdeFlow, setFechaDesdeFlow] = useState(firstDayOfMonth.toISOString().split("T")[0])
-  const [fechaHastaFlow, setFechaHastaFlow] = useState(today.toISOString().split("T")[0])
 
-  const [fechaDesdeFact, setFechaDesdeFact] = useState(firstDayOfMonth.toISOString().split("T")[0])
-  const [fechaHastaFact, setFechaHastaFact] = useState(today.toISOString().split("T")[0])
+  const [fechaDesde, setFechaDesde] = useState(fechaAISO(firstDayOfMonth))
+  const [fechaHasta, setFechaHasta] = useState(fechaAISO(today))
+
+  const [fechaDesdeFlow, setFechaDesdeFlow] = useState(fechaAISO(firstDayOfMonth))
+  const [fechaHastaFlow, setFechaHastaFlow] = useState(fechaAISO(today))
+
+  const [fechaDesdeFact, setFechaDesdeFact] = useState(fechaAISO(firstDayOfMonth))
+  const [fechaHastaFact, setFechaHastaFact] = useState(fechaAISO(today))
 
   const { data: proveedoresData, isLoading: loadingProveedores } = useSWR(
     `/api/informes/proveedores?desde=${fechaDesde}&hasta=${fechaHasta}`,

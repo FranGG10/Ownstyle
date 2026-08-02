@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createIngresoEgreso } from "@/app/actions/ingresos-egresos"
+import { hoyArgentina } from "@/lib/format"
 
 const RUBROS = [
   { value: "publicidad", label: "Publicidad", tipo: "egreso", tipoFijo: true },
@@ -33,7 +34,7 @@ export function IngresoEgresoForm() {
   const [success, setSuccess] = useState(false)
 
   const [formData, setFormData] = useState({
-    fecha: new Date().toISOString().split("T")[0],
+    fecha: hoyArgentina(),
     tipo: "" as "ingreso" | "egreso" | "",
     categoria: "",
     descripcion: "",
